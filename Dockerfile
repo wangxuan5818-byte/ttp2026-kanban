@@ -6,18 +6,14 @@ WORKDIR /app
 COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 复制后端代码
+# 复制后端代码（包含 static 目录中的前端构建产物）
 COPY backend/ ./backend/
-
-# 复制前端构建产物
-COPY dist/public/ ./backend/static/
 
 # 创建数据目录（SQLite持久化）
 RUN mkdir -p /app/backend/data
 
 # 设置环境变量
 ENV SQLITE_PATH=/app/backend/data/ttp2026.db
-ENV DATABASE_URL=""
 ENV PYTHONPATH=/app/backend
 
 # 暴露端口
