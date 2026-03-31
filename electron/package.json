@@ -1,0 +1,19 @@
+{
+  "name": "ttp2026-kanban-desktop",
+  "version": "2.0.0",
+  "description": "TTP2026 战略看板桌面客户端",
+  "main": "main.js",
+  "author": "TTP集团",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder build --config electron-builder.json",
+    "build:win": "electron-builder build --win --config electron-builder.json",
+    "build:mac": "electron-builder build --mac --config electron-builder.json",
+    "build:linux": "electron-builder build --linux --config electron-builder.json"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3"
+  }
+}

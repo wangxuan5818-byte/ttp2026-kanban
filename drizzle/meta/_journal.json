@@ -1,0 +1,76 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1774376346185,
+      "tag": "0000_elite_kinsey_walden",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1774376425154,
+      "tag": "0001_dashing_mockingbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1774377192637,
+      "tag": "0002_neat_ezekiel_stane",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1774403657107,
+      "tag": "0003_faulty_crystal",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1774408221210,
+      "tag": "0004_burly_glorian",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1774408942799,
+      "tag": "0005_next_leader",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1774412510636,
+      "tag": "0006_nice_silver_surfer",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1774432884494,
+      "tag": "0007_giant_venus",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1774500000000,
+      "tag": "0008_outcome_records",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1774594305953,
+      "tag": "0009_lethal_guardsmen",
+      "breakpoints": true
+    }
+  ]
+}

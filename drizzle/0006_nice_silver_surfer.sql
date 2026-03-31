@@ -1,0 +1,1 @@
+ALTER TABLE `tasks` MODIFY COLUMN `status` enum('进行中','已完成','待启动','有卡点','已结束') NOT NULL DEFAULT '待启动';

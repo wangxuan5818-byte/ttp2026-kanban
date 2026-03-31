@@ -1,0 +1,19 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS `tasks` (\n  `id` varchar(64) NOT NULL,\n  `committeeId` varchar(64) NOT NULL,\n  `name` varchar(200) NOT NULL,\n  `goal` text NOT NULL,\n  `strategy` text NOT NULL,\n  `actions` json NOT NULL DEFAULT ('[]'),\n  `milestone` text,\n  `result` text,\n  `breakthrough` text,\n  `manager` varchar(100),\n  `contributors` json NOT NULL DEFAULT ('[]'),\n  `dingDeptIds` json NOT NULL DEFAULT ('[]'),\n  `deadline` varchar(20),\n  `status` enum('进行中','已完成','待启动','有卡点') NOT NULL DEFAULT '待启动',\n  `rewardPool` varchar(200),\n  `inputManDays` float,\n  `outputValue` float,\n  `completionRate` float DEFAULT 0,\n  `score` float DEFAULT 0,\n  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  `createdBy` int,\n  PRIMARY KEY (`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3JD156Gh492KyPP.7771b1aafa51 --database itrmCPuiVJQYLPwJLMeptv --execute CREATE TABLE IF NOT EXISTS `tasks` (\n  `id` varchar(64) NOT NULL,\n  `committeeId` varchar(64) NOT NULL,\n  `name` varchar(200) NOT NULL,\n  `goal` text NOT NULL,\n  `strategy` text NOT NULL,\n  `actions` json NOT NULL DEFAULT ('[]'),\n  `milestone` text,\n  `result` text,\n  `breakthrough` text,\n  `manager` varchar(100),\n  `contributors` json NOT NULL DEFAULT ('[]'),\n  `dingDeptIds` json NOT NULL DEFAULT ('[]'),\n  `deadline` varchar(20),\n  `status` enum('进行中','已完成','待启动','有卡点') NOT NULL DEFAULT '待启动',\n  `rewardPool` varchar(200),\n  `inputManDays` float,\n  `outputValue` float,\n  `completionRate` float DEFAULT 0,\n  `score` float DEFAULT 0,\n  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  `createdBy` int,\n  PRIMARY KEY (`id`)\n);",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1064 (42000) at line 1: You have an error in your SQL syntax; check the manual that corresponds to your TiDB version for the right syntax to use line 7 column 40 near \"'[]'),",
+    "  `milestone` text,",
+    "  `result` text,",
+    "  `breakthrough` text,",
+    "  `manager` varchar(100),",
+    "  `contributors` json NOT NULL DEFAULT ('[]'),",
+    "  `dingDeptIds` json NOT NULL DEFAULT ('[]'),",
+    "  `deadline` varchar(20),",
+    "  `status` enum('进行中','已完成','待启动','有卡点') NOT NULL DEFAULT '待启动',",
+    "  `rewardPool` varchar(200),",
+    "  `inputManDays` float,",
+    "  `outp"
+  ]
+}

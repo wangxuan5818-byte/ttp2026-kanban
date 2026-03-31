@@ -1,0 +1,25 @@
+{
+  "query": "SHOW TABLES;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3JD156Gh492KyPP.7771b1aafa51 --database itrmCPuiVJQYLPwJLMeptv --execute SHOW TABLES;",
+  "rows": [
+    {
+      "Tables_in_itrmCPuiVJQYLPwJLMeptv": "__drizzle_migrations"
+    },
+    {
+      "Tables_in_itrmCPuiVJQYLPwJLMeptv": "kanban_users"
+    },
+    {
+      "Tables_in_itrmCPuiVJQYLPwJLMeptv": "score_records"
+    },
+    {
+      "Tables_in_itrmCPuiVJQYLPwJLMeptv": "task_attachments"
+    },
+    {
+      "Tables_in_itrmCPuiVJQYLPwJLMeptv": "users"
+    }
+  ],
+  "messages": [],
+  "stdout": "Tables_in_itrmCPuiVJQYLPwJLMeptv\n__drizzle_migrations\nkanban_users\nscore_records\ntask_attachments\nusers\n",
+  "stderr": "",
+  "execution_time_ms": 1559
+}

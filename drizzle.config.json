@@ -1,0 +1,8 @@
+{
+  "schema": "./drizzle/schema.ts",
+  "out": "./drizzle",
+  "dialect": "mysql",
+  "dbCredentials": {
+    "url": "mysql://ttp2026:ttp2026_db_password_2026@localhost:3306/ttp2026_kanban"
+  }
+}

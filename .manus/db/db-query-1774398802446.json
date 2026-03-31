@@ -1,0 +1,15 @@
+{
+  "query": "SELECT id, username, passwordHash FROM kanban_users WHERE username = 'admin';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3JD156Gh492KyPP.7771b1aafa51 --database itrmCPuiVJQYLPwJLMeptv --execute SELECT id, username, passwordHash FROM kanban_users WHERE username = 'admin';",
+  "rows": [
+    {
+      "id": "1",
+      "username": "admin",
+      "passwordHash": "4cec6d3d245d55bcc8e77af141afb323583517ba5c8c1343b5cb7d71146add2e"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tusername\tpasswordHash\n1\tadmin\t4cec6d3d245d55bcc8e77af141afb323583517ba5c8c1343b5cb7d71146add2e\n",
+  "stderr": "",
+  "execution_time_ms": 1596
+}

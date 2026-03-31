@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: ttp2026-kanban
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: DATABASE_URL
+        value: ""
+      - key: SQLITE_PATH
+        value: /app/backend/data/ttp2026.db
+      - key: OPENAI_API_KEY
+        sync: false
+    disk:
+      name: kanban-data
+      mountPath: /app/backend/data
+      sizeGB: 1
