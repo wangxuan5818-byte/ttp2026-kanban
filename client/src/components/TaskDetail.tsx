@@ -2,12 +2,13 @@
  * 任务详情面板 - 纸质战情室风格
  * 右侧抽屉式展示任务完整信息：目标、策略、行动、里程碑、责任人
  * 新增：编辑/删除按钮、结构化时间节点展示、AI 项目诊断功能
+ * 修复：行动清单支持增删改查（dbTaskId存在时）
  */
 
 import { useState } from "react";
 import {
   X, Target, Zap, Users, Trophy, AlertTriangle, CheckCircle2,
-  Brain, Loader2, Pencil, Trash2, Calendar, Clock
+  Brain, Loader2, Pencil, Trash2, Calendar, Clock, Plus, Edit3, Save, XCircle
 } from "lucide-react";
 import type { Committee, Task } from "@/data/kanbanData";
 import { trpc } from "@/lib/trpc";
@@ -34,21 +35,15 @@ const statusConfig: Record<string, { label: string; cls: string }> = {
   "有卡点": { label: "有卡点", cls: "status-blocked" },
 };
 
-/** 解析里程碑文本为结构化节点列表
- * 支持格式：
- * - "日期: 描述" 或 "日期 描述"（每行一个节点）
- * - 普通文本（整体作为一个节点展示）
- */
+/** 解析里程碑文本为结构化节点列表 */
 function parseMilestones(text: string): Array<{ date: string; desc: string }> {
   if (!text) return [];
   const lines = text.split(/[；;,，\n]/).map(l => l.trim()).filter(Boolean);
   return lines.map(line => {
-    // 尝试匹配 "YYYY-MM-DD: 描述" 或 "YYYY年M月D日: 描述" 或 "M月D日: 描述"
     const dateMatch = line.match(/^(\d{4}[-/年]\d{1,2}[-/月]\d{0,2}日?|[一二三四五六七八九十\d]+月[一二三四五六七八九十\d]+日?|\d{1,2}[./-]\d{1,2})\s*[：:]\s*(.+)$/);
     if (dateMatch) {
       return { date: dateMatch[1], desc: dateMatch[2] };
     }
-    // 尝试匹配 "描述（日期）" 格式
     const parenMatch = line.match(/^(.+?)（(\d{4}[-/]\d{1,2}[-/]\d{1,2})）$/);
     if (parenMatch) {
       return { date: parenMatch[2], desc: parenMatch[1] };
@@ -65,6 +60,13 @@ export default function TaskDetail({ task, committee, onClose, dbTaskId, onEdit,
   const [diagnosisResult, setDiagnosisResult] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // 行动清单增删改查状态
+  const [localActions, setLocalActions] = useState<string[] | null>(null);
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [editingVal, setEditingVal] = useState("");
+  const [addingAction, setAddingAction] = useState(false);
+  const [newActionVal, setNewActionVal] = useState("");
+
   const utils = trpc.useUtils();
 
   const deleteMutation = trpc.tasks.delete.useMutation({
@@ -77,6 +79,18 @@ export default function TaskDetail({ task, committee, onClose, dbTaskId, onEdit,
     onError: (err) => {
       toast.error(`删除失败：${err.message}`);
     },
+  });
+
+  const updateActionsMutation = trpc.tasks.update.useMutation({
+    onSuccess: () => {
+      utils.tasks.list.invalidate();
+      utils.tasks.listAll.invalidate();
+      toast.success("行动清单已更新");
+      setEditingIdx(null);
+      setAddingAction(false);
+      setNewActionVal("");
+    },
+    onError: (err) => toast.error(`更新失败：${err.message}`),
   });
 
   const diagnoseMutation = trpc.tasks.diagnose.useMutation({
@@ -112,6 +126,35 @@ export default function TaskDetail({ task, committee, onClose, dbTaskId, onEdit,
       return;
     }
     deleteMutation.mutate({ id: dbTaskId });
+  };
+
+  // 行动清单操作
+  const currentActions = localActions !== null ? localActions : (task.actions || []);
+
+  const saveActions = (newActions: string[]) => {
+    if (!dbTaskId) return;
+    setLocalActions(newActions);
+    updateActionsMutation.mutate({ id: dbTaskId, actions: newActions.filter(a => a.trim()) });
+  };
+
+  const handleAddAction = () => {
+    if (!newActionVal.trim()) return;
+    saveActions([...currentActions, newActionVal.trim()]);
+  };
+
+  const handleStartEdit = (idx: number) => {
+    setEditingIdx(idx);
+    setEditingVal(currentActions[idx]);
+  };
+
+  const handleSaveEdit = (idx: number) => {
+    if (!editingVal.trim()) return;
+    const updated = currentActions.map((a, i) => i === idx ? editingVal.trim() : a);
+    saveActions(updated);
+  };
+
+  const handleDeleteAction = (idx: number) => {
+    saveActions(currentActions.filter((_, i) => i !== idx));
   };
 
   const milestones = parseMilestones(task.milestone || "");
@@ -225,31 +268,130 @@ export default function TaskDetail({ task, committee, onClose, dbTaskId, onEdit,
             </Section>
           )}
 
-          {/* 行动项 */}
-          {task.actions && task.actions.length > 0 && (
-            <Section icon={<CheckCircle2 size={13} />} title={`行动清单 (${task.actions.length}项)`} color={committeeColor}>
-              <div className="space-y-2">
-                {task.actions.map((action, i) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-2.5 p-2.5 rounded-sm text-sm"
-                    style={{
-                      background: 'oklch(0.97 0.004 80)',
-                      border: '1px solid oklch(0.90 0.008 75)',
-                    }}
+          {/* 行动清单 - 支持增删改查 */}
+          <Section
+            icon={<CheckCircle2 size={13} />}
+            title={`行动清单 (${currentActions.length}项)`}
+            color={committeeColor}
+          >
+            <div className="space-y-2">
+              {currentActions.length === 0 && !addingAction && (
+                <div
+                  className="text-xs text-muted-foreground py-3 text-center rounded-sm"
+                  style={{ border: '1px dashed oklch(0.86 0.012 75)' }}
+                >
+                  暂无行动项{dbTaskId ? "，点击下方按钮添加" : ""}
+                </div>
+              )}
+              {currentActions.map((action, i) => (
+                <div
+                  key={i}
+                  className="group flex items-start gap-2.5 p-2.5 rounded-sm text-sm"
+                  style={{
+                    background: 'oklch(0.97 0.004 80)',
+                    border: '1px solid oklch(0.90 0.008 75)',
+                  }}
+                >
+                  <span
+                    className="shrink-0 w-4 h-4 rounded-sm flex items-center justify-center text-[9px] font-bold mt-0.5"
+                    style={{ background: committeeColor, color: 'oklch(0.98 0.002 60)' }}
                   >
-                    <span
-                      className="shrink-0 w-4 h-4 rounded-sm flex items-center justify-center text-[9px] font-bold mt-0.5"
-                      style={{ background: committeeColor, color: 'oklch(0.98 0.002 60)' }}
-                    >
-                      {i + 1}
-                    </span>
-                    <span className="text-foreground leading-relaxed">{action}</span>
-                  </div>
-                ))}
-              </div>
-            </Section>
-          )}
+                    {i + 1}
+                  </span>
+                  {editingIdx === i ? (
+                    <div className="flex-1 flex gap-1.5">
+                      <input
+                        value={editingVal}
+                        onChange={e => setEditingVal(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') handleSaveEdit(i);
+                          if (e.key === 'Escape') setEditingIdx(null);
+                        }}
+                        autoFocus
+                        className="flex-1 px-2 py-0.5 text-sm rounded-sm outline-none"
+                        style={{ border: `1px solid ${committeeColor}60`, background: 'white' }}
+                      />
+                      <button
+                        onClick={() => handleSaveEdit(i)}
+                        disabled={updateActionsMutation.isPending}
+                        className="p-1 rounded-sm hover:bg-green-50"
+                        title="保存"
+                      >
+                        {updateActionsMutation.isPending ? <Loader2 size={12} className="animate-spin" style={{ color: 'oklch(0.35 0.15 145)' }} /> : <Save size={12} style={{ color: 'oklch(0.35 0.15 145)' }} />}
+                      </button>
+                      <button onClick={() => setEditingIdx(null)} className="p-1 rounded-sm hover:bg-black/5" title="取消">
+                        <XCircle size={12} style={{ color: 'oklch(0.55 0.015 60)' }} />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-foreground leading-relaxed">{action}</span>
+                      {dbTaskId && (
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-1">
+                          <button
+                            onClick={() => handleStartEdit(i)}
+                            className="p-1 rounded-sm hover:bg-black/5"
+                            title="编辑"
+                          >
+                            <Edit3 size={11} style={{ color: 'oklch(0.45 0.015 60)' }} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteAction(i)}
+                            disabled={updateActionsMutation.isPending}
+                            className="p-1 rounded-sm hover:bg-red-50"
+                            title="删除"
+                          >
+                            <Trash2 size={11} style={{ color: 'oklch(0.55 0.18 22)' }} />
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              ))}
+
+              {/* 新增行动项输入框 */}
+              {addingAction ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    value={newActionVal}
+                    onChange={e => setNewActionVal(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') handleAddAction();
+                      if (e.key === 'Escape') { setAddingAction(false); setNewActionVal(""); }
+                    }}
+                    autoFocus
+                    placeholder="输入行动项内容..."
+                    className="flex-1 px-2 py-1.5 text-sm rounded-sm outline-none"
+                    style={{ border: `1px solid ${committeeColor}60`, background: 'white' }}
+                  />
+                  <button
+                    onClick={handleAddAction}
+                    disabled={updateActionsMutation.isPending || !newActionVal.trim()}
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-sm font-medium disabled:opacity-50"
+                    style={{ background: committeeColor, color: 'white' }}
+                  >
+                    {updateActionsMutation.isPending ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
+                    保存
+                  </button>
+                  <button
+                    onClick={() => { setAddingAction(false); setNewActionVal(""); }}
+                    className="p-1.5 rounded-sm hover:bg-black/5"
+                  >
+                    <XCircle size={14} style={{ color: 'oklch(0.55 0.015 60)' }} />
+                  </button>
+                </div>
+              ) : dbTaskId ? (
+                <button
+                  onClick={() => setAddingAction(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-sm transition-colors w-full justify-center"
+                  style={{ border: '1px dashed oklch(0.75 0.015 75)', color: 'oklch(0.55 0.015 60)' }}
+                >
+                  <Plus size={12} /> 添加行动项
+                </button>
+              ) : null}
+            </div>
+          </Section>
 
           {/* 里程碑 / 时间节点 */}
           {task.milestone && (

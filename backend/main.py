@@ -16,7 +16,7 @@ from passlib.context import CryptContext
 # 添加当前目录到路径
 sys.path.insert(0, os.path.dirname(__file__))
 
-from models.database import create_tables, SessionLocal, User, SystemConfig
+from models.database import create_tables, migrate_add_columns, SessionLocal, User, SystemConfig
 from routers import auth, tasks, outcomes, committees, users, trpc_compat, agent
 
 pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
@@ -93,6 +93,7 @@ async def lifespan(app: FastAPI):
     """应用生命周期"""
     print("🚀 TTP2026 战略看板后端启动中...")
     create_tables()
+    migrate_add_columns()
     init_default_data()
     print("✅ 后端服务就绪，监听端口 8000")
     yield

@@ -2,12 +2,13 @@
  * 委员会成员专属任务管理面板
  * 只能查看和操作本委员会的任务（增删改查）
  * 后端已做权限隔离，此处为前端便捷入口
+ * 修复：新建任务保存后不关闭弹窗（可继续新建），任务状态支持内联切换
  */
 
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import TaskEditor from "@/components/TaskEditor";
-import { Plus, Edit2, Trash2, X, Loader2, AlertCircle, CheckCircle2, Clock, AlertTriangle, PlayCircle } from "lucide-react";
+import { Plus, Edit2, Trash2, X, Loader2, AlertCircle, CheckCircle2, Clock, AlertTriangle, PlayCircle, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import type { Committee } from "@/data/kanbanData";
 
@@ -52,6 +53,7 @@ export default function CommitteeEditor({ committee, onClose }: CommitteeEditorP
   const [showTaskEditor, setShowTaskEditor] = useState(false);
   const [editingTask, setEditingTask] = useState<DbTask | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("全部");
+  const [statusMenuTaskId, setStatusMenuTaskId] = useState<string | null>(null);
 
   const utils = trpc.useUtils();
 
@@ -68,19 +70,41 @@ export default function CommitteeEditor({ committee, onClose }: CommitteeEditorP
     onError: (err) => toast.error(`删除失败：${err.message}`),
   });
 
+  const updateStatusMutation = trpc.tasks.update.useMutation({
+    onSuccess: () => {
+      utils.tasks.list.invalidate({ committeeId: committee.id });
+      utils.tasks.listAll.invalidate();
+      toast.success("状态已更新");
+      setStatusMenuTaskId(null);
+    },
+    onError: (err) => toast.error(`更新失败：${err.message}`),
+  });
+
   const handleDelete = (task: DbTask) => {
     if (!confirm(`确认删除任务「${task.name}」？此操作不可撤销。`)) return;
     deleteMutation.mutate({ id: task.id });
   };
 
+  const handleStatusChange = (taskId: string, status: string) => {
+    updateStatusMutation.mutate({ id: taskId, status: status as DbTask["status"] });
+  };
+
+  // 新建任务保存后：重置表单继续新建（不关闭弹窗）；编辑任务保存后：关闭弹窗
   const handleEditorSaved = () => {
-    setShowTaskEditor(false);
-    setEditingTask(null);
+    if (editingTask) {
+      // 编辑模式：保存后关闭
+      setShowTaskEditor(false);
+      setEditingTask(null);
+    } else {
+      // 新建模式：保存后重置表单，允许继续新建
+      setShowTaskEditor(false);
+      setTimeout(() => setShowTaskEditor(true), 50);
+    }
     refetch();
     utils.tasks.list.invalidate({ committeeId: committee.id });
   };
 
-  const allStatuses = ["全部", "进行中", "有卡点", "待启动", "已完成"];
+  const allStatuses = ["全部", "进行中", "有卡点", "待启动", "已完成", "已结束"];
   const filteredTasks = (tasks || []).filter(t =>
     filterStatus === "全部" || t.status === filterStatus
   );
@@ -95,13 +119,14 @@ export default function CommitteeEditor({ committee, onClose }: CommitteeEditorP
       {/* 遮罩 */}
       <div
         className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={() => { setStatusMenuTaskId(null); onClose(); }}
       />
 
       {/* 面板 */}
       <div
         className="fixed inset-y-0 right-0 z-50 w-full max-w-3xl flex flex-col shadow-2xl"
         style={{ background: 'oklch(0.975 0.008 80)', borderLeft: '1px solid oklch(0.86 0.012 75)' }}
+        onClick={() => setStatusMenuTaskId(null)}
       >
         {/* 标题栏 */}
         <div
@@ -146,7 +171,7 @@ export default function CommitteeEditor({ committee, onClose }: CommitteeEditorP
           style={{ borderColor: 'oklch(0.86 0.012 75)', background: 'oklch(0.97 0.005 80)' }}
         >
           <span className="text-xs text-muted-foreground">任务统计：</span>
-          {Object.entries(statusConfig).map(([status, cfg]) => (
+          {Object.entries(statusConfig).filter(([s]) => s !== "已完成").map(([status, cfg]) => (
             <div key={status} className="flex items-center gap-1.5">
               <cfg.icon size={11} style={{ color: cfg.color }} />
               <span className="text-xs font-mono" style={{ color: cfg.color }}>
@@ -162,7 +187,7 @@ export default function CommitteeEditor({ committee, onClose }: CommitteeEditorP
 
         {/* 状态筛选 */}
         <div
-          className="shrink-0 px-6 py-2 flex items-center gap-2 border-b"
+          className="shrink-0 px-6 py-2 flex items-center gap-2 border-b flex-wrap"
           style={{ borderColor: 'oklch(0.86 0.012 75)' }}
         >
           {allStatuses.map(s => (
@@ -265,6 +290,45 @@ export default function CommitteeEditor({ committee, onClose }: CommitteeEditorP
 
                     {/* 操作按钮 */}
                     <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {/* 状态快速切换下拉 */}
+                      <div className="relative">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setStatusMenuTaskId(statusMenuTaskId === task.id ? null : task.id);
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-sm transition-colors hover:bg-black/5"
+                          style={{ color: cfg.color, border: `1px solid ${cfg.color}40` }}
+                          title="切换状态"
+                          disabled={updateStatusMutation.isPending}
+                        >
+                          <StatusIcon size={10} />
+                          {cfg.label}
+                          <ChevronDown size={9} />
+                        </button>
+                        {statusMenuTaskId === task.id && (
+                          <div
+                            className="absolute right-0 top-full mt-1 z-[60] rounded-sm shadow-lg py-1 min-w-[96px]"
+                            style={{ background: 'oklch(0.99 0.003 80)', border: '1px solid oklch(0.86 0.012 75)' }}
+                            onClick={e => e.stopPropagation()}
+                          >
+                            {(["进行中", "待启动", "有卡点", "已结束"] as const).filter(s => s !== task.status).map(s => {
+                              const sc = statusConfig[s];
+                              const SIcon = sc.icon;
+                              return (
+                                <button
+                                  key={s}
+                                  onClick={() => handleStatusChange(task.id, s)}
+                                  className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs hover:bg-black/5 transition-colors"
+                                  style={{ color: sc.color }}
+                                >
+                                  <SIcon size={10} /> {sc.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                       <button
                         onClick={() => { setEditingTask(task as DbTask); setShowTaskEditor(true); }}
                         className="flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-sm transition-colors hover:bg-black/5"

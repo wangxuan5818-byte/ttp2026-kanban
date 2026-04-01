@@ -15,7 +15,7 @@ const fs = require('fs');
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 // 云端后端地址（生产模式使用）
-const CLOUD_BACKEND_URL = 'https://ttp2026-kanban-production.up.railway.app';
+const CLOUD_BACKEND_URL = 'https://ttp2026kanban.xyz';
 
 const CONFIG = {
   BACKEND_PORT: 8000,
