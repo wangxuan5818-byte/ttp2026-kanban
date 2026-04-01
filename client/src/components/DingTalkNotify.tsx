@@ -32,6 +32,7 @@ export default function DingTalkNotify({
 }: DingTalkNotifyProps) {
   const [webhookUrl, setWebhookUrl] = useState("");
   const [clientId, setClientId] = useState("dingeprmdsq7qp3arjxz");
+  const [clientSecret, setClientSecret] = useState("mWXfTZ1XBFOPTDM1VXCgNPM9cj1Z48ItNdv1t7f4p-tJ53Vj17B-5L_dsZRrlUkC");
   const [agentId, setAgentId] = useState("4390267189");
   const [appId, setAppId] = useState("f481bf6d-1248-4f20-b7cd-f4bc4f05f83a");
   const [userIds, setUserIds] = useState("");
@@ -50,6 +51,7 @@ export default function DingTalkNotify({
     onSuccess: (data: any) => {
       if (data?.webhookUrl) setWebhookUrl(data.webhookUrl);
       if (data?.clientId) setClientId(data.clientId);
+      if ((data as any)?.clientSecret) setClientSecret((data as any).clientSecret);
       if (data?.agentId) setAgentId(data.agentId);
       if (data?.appId) setAppId(data.appId);
     },
@@ -104,13 +106,13 @@ export default function DingTalkNotify({
     setIsTesting(true);
     setConnectionResult(null);
     // 先保存配置，再测试
-    saveConfigMutation.mutate({ webhookUrl, clientId, agentId, appId } as any);
+    saveConfigMutation.mutate({ webhookUrl, clientId, clientSecret, agentId, appId } as any);
     testConnectionMutation.mutate();
   };
 
   const handleSaveConfig = () => {
     setIsSavingConfig(true);
-    saveConfigMutation.mutate({ webhookUrl, clientId, agentId, appId } as any);
+    saveConfigMutation.mutate({ webhookUrl, clientId, clientSecret, agentId, appId } as any);
   };
 
   const handleSendNotify = () => {
@@ -242,6 +244,16 @@ export default function DingTalkNotify({
                       value={clientId}
                       onChange={e => setClientId(e.target.value)}
                       className="w-full px-2 py-1.5 rounded-sm border border-border bg-background font-mono text-xs focus:outline-none focus:ring-1 focus:ring-[oklch(0.42_0.18_22)]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-muted-foreground block mb-1">Client Secret（AppSecret）</label>
+                    <input
+                      type="password"
+                      value={clientSecret}
+                      onChange={e => setClientSecret(e.target.value)}
+                      className="w-full px-2 py-1.5 rounded-sm border border-border bg-background font-mono text-xs focus:outline-none focus:ring-1 focus:ring-[oklch(0.42_0.18_22)]"
+                      placeholder="已预填写，如需修改请直接输入"
                     />
                   </div>
                   <div>

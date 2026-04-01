@@ -5,6 +5,14 @@ TTP2026 战略看板 - Python FastAPI 后端
 """
 import os
 import sys
+# 加载 .env 文件中的环境变量（Railway 上使用 Variables 面板，本地开发使用 .env 文件）
+try:
+    from dotenv import load_dotenv
+    _env_path = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(_env_path):
+        load_dotenv(_env_path, override=False)  # override=False: 不覆盖已有环境变量
+except ImportError:
+    pass
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware

@@ -947,13 +947,146 @@ def handle_report_global(request: Request, input_data: Any, db: Session) -> dict
     })
 
 # ============================================================
+# 钉钉 API 工具函数
+# ============================================================
+import urllib.request as _urllib_req
+
+# Token 缓存
+_ding_token_cache: dict = {"token": None, "expires_at": 0}
+
+def _get_ding_config(db: Session) -> dict:
+    """从数据库或环境变量获取钉钉配置"""
+    config = db.query(SystemConfig).filter(SystemConfig.config_key == "dingtalk_config").first()
+    saved: dict = {}
+    if config and config.config_value:
+        try:
+            saved = json.loads(config.config_value)
+        except Exception:
+            pass
+    return {
+        "client_id": saved.get("clientId") or os.getenv("DINGTALK_CLIENT_ID", ""),
+        "client_secret": saved.get("clientSecret") or os.getenv("DINGTALK_CLIENT_SECRET", ""),
+        "agent_id": saved.get("agentId") or os.getenv("DINGTALK_AGENT_ID", ""),
+        "app_id": saved.get("appId") or os.getenv("DINGTALK_APP_ID", ""),
+    }
+
+def _ding_post(url: str, payload: dict, timeout: int = 10) -> dict:
+    """发送 POST 请求到钉钉 API"""
+    data = json.dumps(payload).encode("utf-8")
+    req = _urllib_req.Request(
+        url, data=data,
+        headers={"Content-Type": "application/json", "Content-Length": str(len(data))},
+        method="POST"
+    )
+    with _urllib_req.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+def _get_ding_access_token(db: Session) -> str:
+    """获取钉钉 access_token（带缓存，过期前60s刷新）"""
+    now = time.time()
+    if _ding_token_cache["token"] and now < _ding_token_cache["expires_at"] - 60:
+        return _ding_token_cache["token"]
+    cfg = _get_ding_config(db)
+    client_id = cfg["client_id"]
+    client_secret = cfg["client_secret"]
+    if not client_id or not client_secret:
+        raise ValueError("钉钉 Client ID 或 Client Secret 未配置，请在系统设置中填写")
+    resp = _ding_post(
+        "https://api.dingtalk.com/v1.0/oauth2/accessToken",
+        {"appKey": client_id, "appSecret": client_secret}
+    )
+    token = resp.get("accessToken")
+    if not token:
+        raise ValueError(f"获取钉钉 access_token 失败: {resp}")
+    expire_in = int(resp.get("expireIn", 7200))
+    _ding_token_cache["token"] = token
+    _ding_token_cache["expires_at"] = now + expire_in
+    return token
+
+# ============================================================
 # 钉钉/通知路由
 # ============================================================
 def handle_dingtalk_search(request: Request, input_data: Any, db: Session) -> dict:
-    return trpc_success([])
+    """搜索钉钉通讯录成员（通过根部门成员列表过滤）"""
+    user = get_current_user(request)
+    if not user:
+        return trpc_error("UNAUTHORIZED", "请先登录", 401)
+    keyword = (input_data.get("query") or "").strip() if input_data else ""
+    if not keyword:
+        return trpc_success([])
+    try:
+        token = _get_ding_access_token(db)
+        # 获取根部门成员列表（最多100人）
+        resp = _ding_post(
+            f"https://oapi.dingtalk.com/topapi/v2/user/list?access_token={token}",
+            {"dept_id": 1, "cursor": 0, "size": 100, "order_field": "custom",
+             "contain_access_limit": False, "language": "zh_CN"}
+        )
+        if resp.get("errcode", 0) != 0:
+            return trpc_error("INTERNAL_SERVER_ERROR", f"钉钉API错误: {resp.get('errmsg')}", 500)
+        users = resp.get("result", {}).get("list", [])
+        # 按关键词过滤（姓名或职务）
+        kw_lower = keyword.lower()
+        matched = [
+            {"name": u.get("name", ""), "mobile": u.get("mobile", ""),
+             "userId": u.get("userid", ""), "deptName": "",
+             "title": u.get("title", ""), "avatar": u.get("avatar", "")}
+            for u in users
+            if kw_lower in (u.get("name") or "").lower()
+            or kw_lower in (u.get("title") or "").lower()
+        ]
+        return trpc_success(matched[:20])
+    except ValueError as e:
+        return trpc_error("BAD_REQUEST", str(e), 400)
+    except Exception as e:
+        return trpc_error("INTERNAL_SERVER_ERROR", f"钉钉搜索失败: {str(e)}", 500)
 
 def handle_contacts(request: Request, input_data: Any, db: Session) -> dict:
-    return trpc_success([])
+    """获取钉钉部门列表或部门成员"""
+    user = get_current_user(request)
+    if not user:
+        return trpc_error("UNAUTHORIZED", "请先登录", 401)
+    route = request.url.path
+    try:
+        token = _get_ding_access_token(db)
+        if "getDepts" in route:
+            dept_id = int((input_data or {}).get("deptId", 1))
+            resp = _ding_post(
+                f"https://oapi.dingtalk.com/topapi/v2/department/listsub?access_token={token}",
+                {"dept_id": dept_id}
+            )
+            if resp.get("errcode", 0) != 0:
+                return trpc_error("INTERNAL_SERVER_ERROR", f"获取部门失败: {resp.get('errmsg')}", 500)
+            depts = resp.get("result", [])
+            return trpc_success([{"deptId": d.get("dept_id"), "name": d.get("name"),
+                                   "parentId": d.get("parent_id")} for d in depts])
+        elif "getDeptMembers" in route:
+            dept_id = int((input_data or {}).get("deptId", 1))
+            cursor = int((input_data or {}).get("cursor", 0))
+            resp = _ding_post(
+                f"https://oapi.dingtalk.com/topapi/v2/user/list?access_token={token}",
+                {"dept_id": dept_id, "cursor": cursor, "size": 50,
+                 "order_field": "custom", "contain_access_limit": False, "language": "zh_CN"}
+            )
+            if resp.get("errcode", 0) != 0:
+                return trpc_error("INTERNAL_SERVER_ERROR", f"获取成员失败: {resp.get('errmsg')}", 500)
+            result = resp.get("result", {})
+            users = result.get("list", [])
+            return trpc_success({
+                "list": [{"userId": u.get("userid"), "name": u.get("name"),
+                          "mobile": u.get("mobile", ""), "title": u.get("title", ""),
+                          "avatar": u.get("avatar", "")} for u in users],
+                "hasMore": result.get("has_more", False),
+                "nextCursor": result.get("next_cursor", 0),
+            })
+        elif "searchUsers" in route:
+            keyword = (input_data or {}).get("keyword", "")
+            return handle_dingtalk_search(request, {"query": keyword}, db)
+        return trpc_success([])
+    except ValueError as e:
+        return trpc_error("BAD_REQUEST", str(e), 400)
+    except Exception as e:
+        return trpc_error("INTERNAL_SERVER_ERROR", f"钉钉通讯录请求失败: {str(e)}", 500)
 
 def handle_notify(request: Request, input_data: Any, db: Session) -> dict:
     import urllib.request as _urllib
@@ -1015,6 +1148,7 @@ def handle_notify_get_webhook_config(request: Request, input_data: Any, db: Sess
         "configured": bool(saved_config.get("webhookUrl")),
         "agentId": saved_config.get("agentId") or os.getenv("DINGTALK_AGENT_ID", ""),
         "clientId": saved_config.get("clientId") or os.getenv("DINGTALK_CLIENT_ID", ""),
+        "clientSecret": saved_config.get("clientSecret") or os.getenv("DINGTALK_CLIENT_SECRET", ""),
         "appId": saved_config.get("appId") or os.getenv("DINGTALK_APP_ID", ""),
         "hasCredentials": True,
     })
@@ -1028,6 +1162,7 @@ def handle_notify_set_webhook_config(request: Request, input_data: Any, db: Sess
     config_value = json.dumps({
         "webhookUrl": input_data.get("webhookUrl", ""),
         "clientId": input_data.get("clientId", ""),
+        "clientSecret": input_data.get("clientSecret", ""),
         "agentId": input_data.get("agentId", ""),
         "appId": input_data.get("appId", ""),
     })
