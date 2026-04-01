@@ -10,7 +10,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Plus, ChevronDown, ChevronUp, TrendingUp, TrendingDown, GripVertical, CheckCircle2, RotateCcw, MoreHorizontal } from "lucide-react";
+import { Plus, ChevronDown, ChevronUp, TrendingUp, TrendingDown, GripVertical, CheckCircle2, RotateCcw, MoreHorizontal, Layers, Trash2, CheckSquare, Square, X, ChevronRight } from "lucide-react";
 import type { Committee, Task } from "@/data/kanbanData";
 import { monthlyStrategy as staticMonthly, strategicGoal as staticGoal } from "@/data/kanbanData";
 import { trpc } from "@/lib/trpc";
@@ -143,8 +143,69 @@ export default function OverviewPanel({ committees, onSelectCommittee, onTaskCli
   const [quickMenuTaskId, setQuickMenuTaskId] = useState<string | null>(null);
   // 已结束任务展开状态
   const [endedExpandedMap, setEndedExpandedMap] = useState<Record<string, boolean>>({});
+  // 批量处理模式
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const [batchStatusMenu, setBatchStatusMenu] = useState(false);
 
   const utils = trpc.useUtils();
+
+  // 批量操作 mutations
+  const batchStatusUpdate = trpc.tasks.batchStatusUpdate.useMutation({
+    onSuccess: (data) => {
+      utils.tasks.listAll.invalidate();
+      utils.tasks.weeklyStats.invalidate();
+      toast.success(`已批量更新 ${data.updated} 个任务状态`);
+      setSelectedTaskIds(new Set());
+      setBatchMode(false);
+    },
+    onError: () => toast.error('批量更新失败'),
+  });
+
+  const batchDelete = trpc.tasks.batchDelete.useMutation({
+    onSuccess: (data) => {
+      utils.tasks.listAll.invalidate();
+      utils.tasks.weeklyStats.invalidate();
+      toast.success(`已删除 ${data.deleted} 个任务`);
+      setSelectedTaskIds(new Set());
+      setBatchMode(false);
+    },
+    onError: () => toast.error('批量删除失败'),
+  });
+
+  const handleBatchStatusUpdate = (status: string) => {
+    if (selectedTaskIds.size === 0) return;
+    if (!window.confirm(`确认将 ${selectedTaskIds.size} 个任务状态改为「${status}」？`)) return;
+    batchStatusUpdate.mutate({ ids: Array.from(selectedTaskIds), status: status as any });
+    setBatchStatusMenu(false);
+  };
+
+  const handleBatchDelete = () => {
+    if (selectedTaskIds.size === 0) return;
+    if (!window.confirm(`确认删除选中的 ${selectedTaskIds.size} 个任务？此操作不可撤销！`)) return;
+    batchDelete.mutate({ ids: Array.from(selectedTaskIds) });
+  };
+
+  const toggleTaskSelect = (taskId: string) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  };
+
+  const selectAllVisible = () => {
+    const allIds = effectiveCommittees
+      .filter(c => c.committeeStatus === 'active')
+      .flatMap(c => getSortedActiveTasks(c.tasks))
+      .map(t => t.id);
+    setSelectedTaskIds(new Set(allIds));
+  };
+
+  const clearSelection = () => {
+    setSelectedTaskIds(new Set());
+  };
 
   // 标记任务为已结束（带撤销Toast）
   const updateTask = trpc.tasks.update.useMutation({
@@ -420,15 +481,99 @@ export default function OverviewPanel({ committees, onSelectCommittee, onTaskCli
       <div className="grid grid-cols-3 gap-6">
         {/* 委员会列表 - 单列，每行一个 */}
         <div className="col-span-2" ref={committeeListRef}>
-          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2" style={{ fontFamily: "'Noto Serif SC', serif" }}>
-            <span className="w-1 h-4 rounded-sm inline-block" style={{ background: 'oklch(0.42 0.18 22)' }} />
-            各部门任务进度
-            {highlightFilter !== "all" && (
-              <span className="text-xs font-normal text-muted-foreground ml-1">
-                （已高亮筛选）
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2" style={{ fontFamily: "'Noto Serif SC', serif" }}>
+              <span className="w-1 h-4 rounded-sm inline-block" style={{ background: 'oklch(0.42 0.18 22)' }} />
+              各部门任务进度
+              {highlightFilter !== "all" && (
+                <span className="text-xs font-normal text-muted-foreground ml-1">
+                  （已高亮筛选）
+                </span>
+              )}
+            </h3>
+            <button
+              onClick={() => {
+                setBatchMode(prev => !prev);
+                setSelectedTaskIds(new Set());
+                setBatchStatusMenu(false);
+              }}
+              className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-sm transition-all duration-150"
+              style={{
+                background: batchMode ? 'oklch(0.42 0.18 22)' : 'oklch(0.42 0.18 22 / 0.08)',
+                color: batchMode ? 'oklch(0.98 0.002 60)' : 'oklch(0.42 0.18 22)',
+                border: '1px solid oklch(0.42 0.18 22 / 0.3)',
+              }}
+            >
+              <Layers size={12} />
+              {batchMode ? '退出批量' : '批量处理'}
+            </button>
+          </div>
+
+          {/* 批量操作工具栏 */}
+          {batchMode && (
+            <div
+              className="flex items-center gap-2 px-3 py-2 rounded-sm mb-3 text-xs"
+              style={{ background: 'oklch(0.42 0.18 22 / 0.06)', border: '1px solid oklch(0.42 0.18 22 / 0.2)' }}
+            >
+              <span className="font-medium" style={{ color: 'oklch(0.42 0.18 22)' }}>
+                已选 {selectedTaskIds.size} 个任务
               </span>
-            )}
-          </h3>
+              <button
+                onClick={selectAllVisible}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-sm hover:opacity-80 transition-opacity"
+                style={{ background: 'oklch(0.42 0.18 22 / 0.1)', color: 'oklch(0.42 0.18 22)' }}
+              >
+                <CheckSquare size={11} />全选
+              </button>
+              {selectedTaskIds.size > 0 && (
+                <button
+                  onClick={clearSelection}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-sm hover:opacity-80 transition-opacity"
+                  style={{ background: 'oklch(0.55 0.02 60 / 0.1)', color: 'oklch(0.45 0.02 60)' }}
+                >
+                  <Square size={11} />取消选择
+                </button>
+              )}
+              <div className="flex-1" />
+              {/* 批量改状态 */}
+              <div className="relative">
+                <button
+                  onClick={() => setBatchStatusMenu(prev => !prev)}
+                  disabled={selectedTaskIds.size === 0}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-sm transition-all duration-150 disabled:opacity-40"
+                  style={{ background: 'oklch(0.35 0.15 250 / 0.1)', color: 'oklch(0.35 0.15 250)', border: '1px solid oklch(0.35 0.15 250 / 0.3)' }}
+                >
+                  <CheckCircle2 size={11} />改状态
+                  <ChevronRight size={10} className={batchStatusMenu ? 'rotate-90' : ''} style={{ transition: 'transform 0.15s' }} />
+                </button>
+                {batchStatusMenu && (
+                  <div
+                    className="absolute right-0 top-full mt-1 z-50 rounded-sm shadow-lg py-1 min-w-[100px]"
+                    style={{ background: 'oklch(0.98 0.002 60)', border: '1px solid oklch(0.88 0.01 60)' }}
+                  >
+                    {['待启动', '进行中', '有卡点', '已结束'].map(s => (
+                      <button
+                        key={s}
+                        onClick={() => handleBatchStatusUpdate(s)}
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent/50 transition-colors"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* 批量删除 */}
+              <button
+                onClick={handleBatchDelete}
+                disabled={selectedTaskIds.size === 0}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-sm transition-all duration-150 disabled:opacity-40"
+                style={{ background: 'oklch(0.42 0.18 22 / 0.1)', color: 'oklch(0.42 0.18 22)', border: '1px solid oklch(0.42 0.18 22 / 0.3)' }}
+              >
+                <Trash2 size={11} />删除
+              </button>
+            </div>
+          )}
           <div className="space-y-3 animate-stagger">
             {effectiveCommittees.map((committee) => {
               const pct = progressPercent(committee.tasks);
@@ -638,27 +783,37 @@ export default function OverviewPanel({ committees, onSelectCommittee, onTaskCli
                           <div className="space-y-1.5">
                             {tasksWithResult.map(task => {
                               const ts = TASK_STATUS_STYLE[task.status] || TASK_STATUS_STYLE["进行中"];
+                              const isSelected = selectedTaskIds.has(task.id);
                               return (
-                                <button
+                                <div
                                   key={task.id}
-                                  onClick={() => onTaskClick(task)}
-                                  className="w-full text-left rounded-sm px-2.5 py-2 hover:opacity-90 transition-opacity group"
+                                  className="w-full text-left rounded-sm px-2.5 py-2 hover:opacity-90 transition-opacity group flex items-start gap-2"
                                   style={{
-                                    background: `${committee.color}08`,
-                                    borderLeft: `2px solid ${committee.color}60`,
+                                    background: isSelected ? `${committee.color}18` : `${committee.color}08`,
+                                    borderLeft: `2px solid ${isSelected ? committee.color : committee.color + '60'}`,
+                                    outline: isSelected ? `1px solid ${committee.color}40` : 'none',
+                                    cursor: batchMode ? 'pointer' : 'default',
                                   }}
+                                  onClick={() => batchMode ? toggleTaskSelect(task.id) : onTaskClick(task)}
                                 >
-                                  <div className="flex items-center gap-1.5 mb-0.5">
-                                    <span className="text-[10px] font-medium text-foreground truncate flex-1 group-hover:text-primary transition-colors">{task.name}</span>
-                                    <span
-                                      className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-sm font-medium"
-                                      style={{ color: ts.color, background: ts.bg }}
-                                    >{task.status}</span>
+                                  {batchMode && (
+                                    <span className="shrink-0 mt-0.5" style={{ color: isSelected ? committee.color : 'oklch(0.7 0.01 60)' }}>
+                                      {isSelected ? <CheckSquare size={13} /> : <Square size={13} />}
+                                    </span>
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5 mb-0.5">
+                                      <span className="text-[10px] font-medium text-foreground truncate flex-1 group-hover:text-primary transition-colors">{task.name}</span>
+                                      <span
+                                        className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-sm font-medium"
+                                        style={{ color: ts.color, background: ts.bg }}
+                                      >{task.status}</span>
+                                    </div>
+                                    <div className="text-[10px] leading-relaxed" style={{ color: 'oklch(0.45 0.01 60)' }}>
+                                      {task.result!.length > 80 ? task.result!.slice(0, 80) + '…' : task.result}
+                                    </div>
                                   </div>
-                                  <div className="text-[10px] leading-relaxed" style={{ color: 'oklch(0.45 0.01 60)' }}>
-                                    {task.result!.length > 80 ? task.result!.slice(0, 80) + '…' : task.result}
-                                  </div>
-                                </button>
+                                </div>
                               );
                             })}
                           </div>
@@ -666,27 +821,37 @@ export default function OverviewPanel({ committees, onSelectCommittee, onTaskCli
                           <div className="space-y-1.5">
                             {tasksWithResult.filter(t => t.status === '进行中').map(task => {
                               const ts = TASK_STATUS_STYLE[task.status] || TASK_STATUS_STYLE["进行中"];
+                              const isSelected = selectedTaskIds.has(task.id);
                               return (
-                                <button
+                                <div
                                   key={task.id}
-                                  onClick={() => onTaskClick(task)}
-                                  className="w-full text-left rounded-sm px-2.5 py-2 hover:opacity-90 transition-opacity group"
+                                  className="w-full text-left rounded-sm px-2.5 py-2 hover:opacity-90 transition-opacity group flex items-start gap-2"
                                   style={{
-                                    background: `${committee.color}08`,
-                                    borderLeft: `2px solid ${committee.color}60`,
+                                    background: isSelected ? `${committee.color}18` : `${committee.color}08`,
+                                    borderLeft: `2px solid ${isSelected ? committee.color : committee.color + '60'}`,
+                                    outline: isSelected ? `1px solid ${committee.color}40` : 'none',
+                                    cursor: batchMode ? 'pointer' : 'default',
                                   }}
+                                  onClick={() => batchMode ? toggleTaskSelect(task.id) : onTaskClick(task)}
                                 >
-                                  <div className="flex items-center gap-1.5 mb-0.5">
-                                    <span className="text-[10px] font-medium text-foreground truncate flex-1 group-hover:text-primary transition-colors">{task.name}</span>
-                                    <span
-                                      className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-sm font-medium"
-                                      style={{ color: ts.color, background: ts.bg }}
-                                    >{task.status}</span>
+                                  {batchMode && (
+                                    <span className="shrink-0 mt-0.5" style={{ color: isSelected ? committee.color : 'oklch(0.7 0.01 60)' }}>
+                                      {isSelected ? <CheckSquare size={13} /> : <Square size={13} />}
+                                    </span>
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5 mb-0.5">
+                                      <span className="text-[10px] font-medium text-foreground truncate flex-1 group-hover:text-primary transition-colors">{task.name}</span>
+                                      <span
+                                        className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-sm font-medium"
+                                        style={{ color: ts.color, background: ts.bg }}
+                                      >{task.status}</span>
+                                    </div>
+                                    <div className="text-[10px] leading-relaxed" style={{ color: 'oklch(0.45 0.01 60)' }}>
+                                      {task.result!.length > 80 ? task.result!.slice(0, 80) + '…' : task.result}
+                                    </div>
                                   </div>
-                                  <div className="text-[10px] leading-relaxed" style={{ color: 'oklch(0.45 0.01 60)' }}>
-                                    {task.result!.length > 80 ? task.result!.slice(0, 80) + '…' : task.result}
-                                  </div>
-                                </button>
+                                </div>
                               );
                             })}
                           </div>
@@ -710,35 +875,47 @@ export default function OverviewPanel({ committees, onSelectCommittee, onTaskCli
                       </button>
                       {isEndedExpanded && (
                         <div className="space-y-1 mt-1.5">
-                          {endedTasks.map(task => (
-                            <button
-                              key={task.id}
-                              onClick={() => onTaskClick(task)}
-                              className="w-full flex items-center gap-2 text-left px-2 py-1 rounded-sm hover:bg-accent/30 transition-colors opacity-60 group relative z-20"
-                            >
-                              <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-muted-foreground/40" />
-                              <span className="flex-1 text-[11px] text-muted-foreground truncate line-through">
-                                {task.name}
-                              </span>
-                              {task.deadline && (
-                                <span className="shrink-0 text-[9px] font-mono text-muted-foreground/60">
-                                  {task.deadline}
-                                </span>
-                              )}
-                              {/* 撤销已结束：恢复为进行中 */}
-                              <span
-                                role="button"
-                                title="恢复为进行中"
-                                className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-muted-foreground hover:text-blue-500 p-0.5"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  updateTask.mutate({ id: task.id, status: "进行中" });
-                                }}
+                          {endedTasks.map(task => {
+                            const isSelected = selectedTaskIds.has(task.id);
+                            return (
+                              <div
+                                key={task.id}
+                                className="w-full flex items-center gap-2 text-left px-2 py-1 rounded-sm hover:bg-accent/30 transition-colors opacity-60 group relative z-20"
+                                style={{ cursor: batchMode ? 'pointer' : 'default', outline: isSelected ? '1px solid oklch(0.55 0.01 60)' : 'none' }}
+                                onClick={() => batchMode ? toggleTaskSelect(task.id) : onTaskClick(task)}
                               >
-                                <RotateCcw size={11} />
-                              </span>
-                            </button>
-                          ))}
+                                {batchMode ? (
+                                  <span className="shrink-0" style={{ color: isSelected ? 'oklch(0.42 0.18 22)' : 'oklch(0.7 0.01 60)' }}>
+                                    {isSelected ? <CheckSquare size={12} /> : <Square size={12} />}
+                                  </span>
+                                ) : (
+                                  <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-muted-foreground/40" />
+                                )}
+                                <span className="flex-1 text-[11px] text-muted-foreground truncate line-through">
+                                  {task.name}
+                                </span>
+                                {task.deadline && (
+                                  <span className="shrink-0 text-[9px] font-mono text-muted-foreground/60">
+                                    {task.deadline}
+                                  </span>
+                                )}
+                                {/* 撤销已结束：恢复为进行中 */}
+                                {!batchMode && (
+                                  <span
+                                    role="button"
+                                    title="恢复为进行中"
+                                    className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-muted-foreground hover:text-blue-500 p-0.5"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateTask.mutate({ id: task.id, status: "进行中" });
+                                    }}
+                                  >
+                                    <RotateCcw size={11} />
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>

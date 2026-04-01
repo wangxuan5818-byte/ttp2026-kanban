@@ -393,6 +393,41 @@ def handle_tasks_delete(request: Request, input_data: Any, db: Session) -> dict:
         db.commit()
     return trpc_success({"success": True})
 
+def handle_tasks_batch_status_update(request: Request, input_data: Any, db: Session) -> dict:
+    """批量更新任务状态"""
+    user = get_current_user(request)
+    if not user:
+        return trpc_error("UNAUTHORIZED", "请先登录", 401)
+    ids = input_data.get("ids", [])
+    status = input_data.get("status", "")
+    if not ids or not status:
+        return trpc_error("BAD_REQUEST", "缺少ids或status参数", 400)
+    updated = 0
+    for task_id in ids:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if task:
+            task.status = status
+            updated += 1
+    db.commit()
+    return trpc_success({"updated": updated})
+
+def handle_tasks_batch_delete(request: Request, input_data: Any, db: Session) -> dict:
+    """批量删除任务"""
+    user = get_current_user(request)
+    if not user:
+        return trpc_error("UNAUTHORIZED", "请先登录", 401)
+    ids = input_data.get("ids", [])
+    if not ids:
+        return trpc_error("BAD_REQUEST", "缺少ids参数", 400)
+    deleted = 0
+    for task_id in ids:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if task:
+            db.delete(task)
+            deleted += 1
+    db.commit()
+    return trpc_success({"deleted": deleted})
+
 def handle_tasks_batch_create(request: Request, input_data: Any, db: Session) -> dict:
     """批量创建任务（粘贴多行文本）"""
     user = get_current_user(request)
@@ -1217,6 +1252,8 @@ ROUTE_HANDLERS = {
     "tasks.update": (handle_tasks_update, "mutation"),
     "tasks.delete": (handle_tasks_delete, "mutation"),
     "tasks.batchUpdate": (handle_tasks_update, "mutation"),
+    "tasks.batchStatusUpdate": (handle_tasks_batch_status_update, "mutation"),
+    "tasks.batchDelete": (handle_tasks_batch_delete, "mutation"),
     "tasks.batchCreate": (handle_tasks_batch_create, "mutation"),
     "tasks.diagnose": (handle_tasks_diagnose, "mutation"),
     "tasks.getAttachments": (handle_tasks_get_attachments, "query"),

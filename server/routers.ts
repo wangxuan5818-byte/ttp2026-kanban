@@ -1095,6 +1095,37 @@ export const appRouter = router({
         }
         return created;
       }),
+    /** 批量更新任务状态 */
+    batchStatusUpdate: publicProcedure
+      .input(z.object({
+        ids: z.array(z.string()),
+        status: z.enum(["待启动", "进行中", "有卡点", "已结束", "已完成"]),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await requireKanbanUser(ctx);
+        let updated = 0;
+        for (const id of input.ids) {
+          try {
+            await updateTask(id, { status: input.status });
+            updated++;
+          } catch (_) {}
+        }
+        return { updated };
+      }),
+    /** 批量删除任务 */
+    batchDelete: publicProcedure
+      .input(z.object({ ids: z.array(z.string()) }))
+      .mutation(async ({ input, ctx }) => {
+        await requireKanbanUser(ctx);
+        let deleted = 0;
+        for (const id of input.ids) {
+          try {
+            await deleteTask(id);
+            deleted++;
+          } catch (_) {}
+        }
+        return { deleted };
+      }),
   }),
 
   // ─── 钉钉通讯录路由 ────────────────────────────────────────
