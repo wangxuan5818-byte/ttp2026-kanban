@@ -167,6 +167,29 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    // 性能优化：代码分割，减少首屏加载体积
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React核心独立chunk，长期缓存
+          'vendor-react': ['react', 'react-dom'],
+          // 图表库独立chunk（按需加载）
+          'vendor-charts': ['recharts'],
+          // Radix UI组件库独立chunk
+          'vendor-radix': [
+            '@radix-ui/react-dialog',
+            '@radix-ui/react-dropdown-menu',
+            '@radix-ui/react-select',
+            '@radix-ui/react-tabs',
+            '@radix-ui/react-tooltip',
+          ],
+          // 动画库独立chunk
+          'vendor-motion': ['framer-motion'],
+        },
+      },
+    },
+    // 启用chunk大小警告阈值（超过1MB警告）
+    chunkSizeWarningLimit: 1000,
   },
   server: {
     host: true,

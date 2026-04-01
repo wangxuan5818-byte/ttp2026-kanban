@@ -10,3 +10,6 @@ openai==2.3.0
 python-dotenv==1.1.0
 requests==2.32.3
 aiofiles==24.1.0
+# 高性能事件循环和HTTP解析器（显著提升并发吞吐量）
+uvloop==0.21.0
+httptools==0.6.4

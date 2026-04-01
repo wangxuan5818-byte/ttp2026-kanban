@@ -1,11 +1,13 @@
 """
 TTP2026 战略看板 - Python FastAPI 后端
 数据库：MySQL（通过SQLAlchemy连接）
+性能优化版本 v2.1.0
 """
 import os
 import sys
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
@@ -101,18 +103,42 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="TTP2026 战略看板 API",
     description="三体人突围战 · AI战略指挥中心 · Python + MySQL 后端",
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan,
+    # 生产环境关闭docs可提升安全性，但保留便于调试
+    # docs_url=None,
+    # redoc_url=None,
 )
 
-# CORS配置（允许前端访问）
+# ===== 性能优化中间件 =====
+
+# 1. GZip压缩：所有响应自动压缩，减少传输体积约70%
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# 2. CORS配置（允许前端访问）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应限制为具体域名
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 3. 静态资源缓存中间件：为JS/CSS/字体文件添加长期缓存头
+@app.middleware("http")
+async def add_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    # 带hash指纹的静态资源：缓存1年
+    if path.startswith("/assets/") and any(path.endswith(ext) for ext in [".js", ".css", ".woff2", ".woff", ".ttf", ".png", ".svg", ".ico"]):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    # HTML页面：不缓存，确保用户获取最新版本
+    elif path == "/" or path.endswith(".html"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    # API接口：不缓存
+    elif path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 # 注册路由
 app.include_router(auth.router)
@@ -130,8 +156,8 @@ def health_check():
     return {
         "status": "ok",
         "service": "TTP2026 战略看板",
-        "version": "2.0.0",
-        "backend": "Python FastAPI + MySQL"
+        "version": "2.1.0",
+        "backend": "Python FastAPI + SQLite"
     }
 
 
