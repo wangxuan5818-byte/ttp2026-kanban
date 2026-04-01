@@ -7,18 +7,20 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>TTP2026 AI战略看板</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <!-- 性能优化：移除Google Fonts外链（国内访问会阻塞渲染3-5秒），改用系统字体 -->
+    <style>
+      :root {
+        --font-serif: "Noto Serif SC", "Source Han Serif SC", "思源宋体", "宋体", Georgia, serif;
+        --font-sans: "Noto Sans SC", "Source Han Sans SC", "思源黑体", "微软雅黑", "PingFang SC", Arial, sans-serif;
+        --font-mono: "DM Mono", "JetBrains Mono", "Consolas", "Courier New", monospace;
+      }
+    </style>
   </head>
 
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script
-      defer
-      src="%VITE_ANALYTICS_ENDPOINT%/umami"
-      data-website-id="%VITE_ANALYTICS_WEBSITE_ID%"></script>
+    <!-- 分析脚本已移除（减少外部请求） -->
   </body>
 
 </html>
