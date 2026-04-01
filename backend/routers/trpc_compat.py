@@ -22,7 +22,7 @@ except Exception:
 from fastapi import APIRouter, Request, Response, Cookie
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from models.database import SessionLocal, User, Task, Outcome, SystemConfig, CommitteeConfig, TaskAttachment
+from models.database import SessionLocal, User, Task, Outcome, SystemConfig, CommitteeConfig, TaskAttachment, Score
 
 router = APIRouter()
 
@@ -1176,6 +1176,27 @@ def handle_notify_set_webhook_config(request: Request, input_data: Any, db: Sess
     return trpc_success({"saved": True, "message": "钉钉配置已保存"})
 
 # ============================================================
+# 管理员工具路由
+# ============================================================
+def handle_admin_clear_all(request: Request, input_data: Any, db: Session) -> dict:
+    """管理员清空所有业务数据（任务、效益核算、积分、附件、部门配置、系统配置）"""
+    user = get_current_user(request)
+    if not user or user.role != "admin":
+        return trpc_error("FORBIDDEN", "无权限", 403)
+    try:
+        db.query(TaskAttachment).delete()
+        db.query(Score).delete()
+        db.query(Outcome).delete()
+        db.query(Task).delete()
+        db.query(CommitteeConfig).delete()
+        db.query(SystemConfig).delete()
+        db.commit()
+        return trpc_success({"cleared": True, "message": "所有数据已清空"})
+    except Exception as e:
+        db.rollback()
+        return trpc_error("INTERNAL_SERVER_ERROR", str(e), 500)
+
+# ============================================================
 # 路由分发表
 # ============================================================
 ROUTE_HANDLERS = {
@@ -1232,6 +1253,8 @@ ROUTE_HANDLERS = {
     "contacts.getDeptMembers": (handle_contacts, "query"),
     "contacts.getDepts": (handle_contacts, "query"),
     "contacts.searchUsers": (handle_contacts, "query"),
+    # 管理员工具
+    "admin.clearAll": (handle_admin_clear_all, "mutation"),
 }
 
 # ============================================================
