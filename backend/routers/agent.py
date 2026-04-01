@@ -313,7 +313,8 @@ SYSTEM_PROMPT = """你是 TTP2026 战略看板的 AI 助手，代号「突围助
 # ==================== 请求模型 ====================
 
 class ChatRequest(BaseModel):
-    messages: list[dict]
+    messages: list[dict] | None = None
+    message: str | None = None  # 简化格式：单条消息
     stream: bool = True
 
 
@@ -428,8 +429,16 @@ async def agent_chat(
     """AI Agent 对话接口（流式 SSE）"""
     db = SessionLocal()
     try:
+        # 支持两种格式：messages 数组 或 单条 message
+        if request.messages:
+            msgs = request.messages
+        elif request.message:
+            msgs = [{"role": "user", "content": request.message}]
+        else:
+            raise HTTPException(status_code=400, detail="请提供 message 或 messages 字段")
+
         return StreamingResponse(
-            agent_stream(request.messages, current_user, db),
+            agent_stream(msgs, current_user, db),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
