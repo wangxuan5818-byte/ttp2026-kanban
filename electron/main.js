@@ -14,11 +14,15 @@ const fs = require('fs');
 // ============================================================
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
+// 云端后端地址（生产模式使用）
+const CLOUD_BACKEND_URL = 'https://ttp2026-kanban-production.up.railway.app';
+
 const CONFIG = {
   BACKEND_PORT: 8000,
   FRONTEND_PORT: 3000,
-  BACKEND_URL: 'http://localhost:8000',
-  FRONTEND_URL: 'http://localhost:3000',
+  // 生产模式使用云端，开发模式使用本地
+  BACKEND_URL: isDev ? 'http://localhost:8000' : CLOUD_BACKEND_URL,
+  FRONTEND_URL: isDev ? 'http://localhost:3000' : CLOUD_BACKEND_URL,
   APP_NAME: 'TTP2026 战略看板',
   APP_VERSION: '2.0.0',
 };
@@ -140,21 +144,12 @@ function createMainWindow() {
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate));
 
-  // 加载页面 - 生产模式加载本地静态文件，开发模式连接vite服务
+  // 加载页面 - 生产模式直接加载云端，开发模式连接本地vite服务
   if (isDev) {
     mainWindow.loadURL(CONFIG.FRONTEND_URL);
   } else {
-    // 生产模式：优先加载打包的静态文件
-    const staticIndex = path.join(app.getAppPath(), '..', 'dist', 'public', 'index.html');
-    const localIndex = path.join(__dirname, '..', 'dist', 'public', 'index.html');
-    if (fs.existsSync(staticIndex)) {
-      mainWindow.loadFile(staticIndex);
-    } else if (fs.existsSync(localIndex)) {
-      mainWindow.loadFile(localIndex);
-    } else {
-      // 回退：通过后端服务访问
-      mainWindow.loadURL(CONFIG.BACKEND_URL);
-    }
+    // 生产模式：直接加载 Railway 云端
+    mainWindow.loadURL(CLOUD_BACKEND_URL);
   }
 
   mainWindow.once('ready-to-show', () => {
