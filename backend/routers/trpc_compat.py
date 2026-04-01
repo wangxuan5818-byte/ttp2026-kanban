@@ -255,16 +255,23 @@ def handle_tasks_create(request: Request, input_data: Any, db: Session) -> dict:
     user = get_current_user(request)
     if not user:
         return trpc_error("UNAUTHORIZED", "请先登录", 401)
+    import uuid
+    task_id_val = input_data.get("id") or input_data.get("taskId") or str(uuid.uuid4())[:8]
     task = Task(
-        task_id=input_data.get("taskId", ""),
+        id=task_id_val,
         committee_id=input_data.get("committeeId", ""),
         name=input_data.get("name", ""),
         goal=input_data.get("goal", ""),
+        strategy=input_data.get("strategy", ""),
+        milestone=input_data.get("milestone", ""),
+        result=input_data.get("result", ""),
+        breakthrough=input_data.get("breakthrough", ""),
+        manager=input_data.get("manager", ""),
+        deadline=input_data.get("deadline", "") or None,
         status=input_data.get("status", "待启动"),
         completion_rate=input_data.get("completionRate", 0),
-        manager=input_data.get("manager", ""),
-        deadline=input_data.get("deadline", "2026-12-31"),
-        extra_data=json.dumps(input_data, ensure_ascii=False),
+        reward_pool=input_data.get("rewardPool", ""),
+        created_by=user.id,
     )
     db.add(task)
     db.commit()
@@ -276,17 +283,30 @@ def handle_tasks_update(request: Request, input_data: Any, db: Session) -> dict:
     if not user:
         return trpc_error("UNAUTHORIZED", "请先登录", 401)
     task_id = input_data.get("id") or input_data.get("taskId")
-    task = db.query(Task).filter(
-        (Task.id == task_id) | (Task.task_id == str(task_id))
-    ).first()
+    task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         return trpc_error("NOT_FOUND", "任务不存在", 404)
-    # 更新字段
-    for field in ["name", "goal", "status", "completion_rate", "manager", "deadline"]:
-        camel = "".join(w.capitalize() if i > 0 else w for i, w in enumerate(field.split("_")))
+    # 更新所有可编辑字段（camelCase 输入 -> snake_case 字段）
+    field_map = {
+        "name": "name",
+        "goal": "goal",
+        "strategy": "strategy",
+        "milestone": "milestone",
+        "result": "result",
+        "breakthrough": "breakthrough",
+        "manager": "manager",
+        "deadline": "deadline",
+        "status": "status",
+        "completionRate": "completion_rate",
+        "rewardPool": "reward_pool",
+    }
+    for camel, snake in field_map.items():
         if camel in input_data:
-            setattr(task, field, input_data[camel])
-    task.extra_data = json.dumps(input_data, ensure_ascii=False)
+            val = input_data[camel]
+            # deadline 为空字符串时存 None
+            if snake == "deadline" and val == "":
+                val = None
+            setattr(task, snake, val)
     db.commit()
     return trpc_success(_task_to_dict(task))
 
@@ -299,11 +319,6 @@ def handle_tasks_diagnose(request: Request, input_data: Any, db: Session) -> dic
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         return trpc_error("NOT_FOUND", "任务不存在", 404)
-    extra = {}
-    try:
-        extra = json.loads(task.extra_data or "{}")
-    except Exception:
-        pass
     task_info = (
         f"任务名称：{task.name}\n"
         f"目标：{task.goal or '未填写'}\n"
@@ -370,9 +385,7 @@ def handle_tasks_delete(request: Request, input_data: Any, db: Session) -> dict:
     if not user:
         return trpc_error("UNAUTHORIZED", "请先登录", 401)
     task_id = input_data.get("id") or input_data.get("taskId")
-    task = db.query(Task).filter(
-        (Task.id == task_id) | (Task.task_id == str(task_id))
-    ).first()
+    task = db.query(Task).filter(Task.id == task_id).first()
     if task:
         db.delete(task)
         db.commit()
@@ -677,7 +690,7 @@ def handle_notify(request: Request, input_data: Any, db: Session) -> dict:
             return trpc_success({"sent": False, "reason": "未配置钉钉 Webhook URL，请先在通知配置中设置"})
 
         # 查找任务信息
-        task = db.query(Task).filter(Task.task_id == task_id).first() if task_id else None
+        task = db.query(Task).filter(Task.id == task_id).first() if task_id else None
         task_name = task.name if task else task_id or "未知任务"
 
         content = f"## 📋 任务状态变更通知\n\n"
@@ -836,22 +849,23 @@ ROUTE_HANDLERS = {
 # 辅助函数
 # ============================================================
 def _task_to_dict(task: Task) -> dict:
-    extra = {}
-    try:
-        extra = json.loads(task.extra_data or "{}")
-    except Exception:
-        pass
     return {
         "id": task.id,
-        "taskId": task.task_id,
+        "taskId": task.id,
         "committeeId": task.committee_id,
         "name": task.name,
-        "goal": task.goal,
+        "goal": task.goal or "",
+        "strategy": task.strategy or "",
+        "milestone": task.milestone or "",
+        "result": task.result or "",
+        "breakthrough": task.breakthrough or "",
+        "manager": task.manager or "",
+        "deadline": task.deadline or "",
         "status": task.status,
-        "completionRate": task.completion_rate,
-        "manager": task.manager,
-        "deadline": task.deadline,
-        **extra,
+        "completionRate": task.completion_rate or 0,
+        "rewardPool": task.reward_pool or "",
+        "createdAt": task.created_at.isoformat() if task.created_at else None,
+        "updatedAt": task.updated_at.isoformat() if task.updated_at else None,
     }
 
 def _outcome_to_dict(outcome: Outcome) -> dict:

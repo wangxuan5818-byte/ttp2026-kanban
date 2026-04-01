@@ -36,6 +36,9 @@ export default function Home() {
   const [showGlobalEditor, setShowGlobalEditor] = useState(false);
   const [showCommitteeEditor, setShowCommitteeEditor] = useState(false);
   const [showAgentPanel, setShowAgentPanel] = useState(false);
+  // 详情面板编辑模式
+  const [detailEditTask, setDetailEditTask] = useState<Task | null>(null);
+  const [detailEditCommitteeId, setDetailEditCommitteeId] = useState<string>("");
 
   // 获取当前登录的看板用户
   const { data: kanbanUser, isLoading: authLoading, refetch: refetchMe } = trpc.kanban.me.useQuery(
@@ -131,6 +134,13 @@ export default function Home() {
   const handleCloseDetail = () => {
     setDetailOpen(false);
     setTimeout(() => { setSelectedTask(null); setSelectedTaskDbId(undefined); }, 300);
+  };
+  const handleEditFromDetail = () => {
+    if (!selectedTask || !selectedTaskDbId) return;
+    const committee = visibleCommittees.find(c => c.tasks.some(t => t.id === selectedTask.id));
+    setDetailEditTask(selectedTask);
+    setDetailEditCommitteeId(committee?.id || activeCommitteeId);
+    setDetailOpen(false);
   };
 
   // 加载中
@@ -386,6 +396,8 @@ export default function Home() {
               committee={visibleCommittees.find(c => c.tasks.some(t => t.id === selectedTask.id)) || null}
               onClose={handleCloseDetail}
               dbTaskId={selectedTaskDbId}
+              onEdit={selectedTaskDbId ? handleEditFromDetail : undefined}
+              onDelete={selectedTaskDbId ? handleCloseDetail : undefined}
             />
           )}
 
@@ -423,6 +435,21 @@ export default function Home() {
           committeeId={quickCreateCommitteeId}
           onClose={() => setQuickCreateCommitteeId(null)}
           onSaved={() => setQuickCreateCommitteeId(null)}
+        />
+      )}
+      {/* 从详情面板触发的编辑弹窗 */}
+      {detailEditTask && detailEditCommitteeId && (
+        <TaskEditor
+          committeeId={detailEditCommitteeId}
+          taskId={detailEditTask.id}
+          initialData={detailEditTask}
+          onClose={() => { setDetailEditTask(null); setDetailEditCommitteeId(""); }}
+          onSaved={() => {
+            setDetailEditTask(null);
+            setDetailEditCommitteeId("");
+            utils.tasks.listAll.invalidate();
+            utils.tasks.list.invalidate();
+          }}
         />
       )}
       {/* 全局内容管理弹窗（管理员专属） */}

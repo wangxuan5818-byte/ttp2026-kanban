@@ -1,11 +1,14 @@
 /*
  * 任务详情面板 - 纸质战情室风格
  * 右侧抽屉式展示任务完整信息：目标、策略、行动、里程碑、责任人
- * 新增：AI 项目诊断功能（基于目标/路径/里程碑/行动计划/结果导向）
+ * 新增：编辑/删除按钮、结构化时间节点展示、AI 项目诊断功能
  */
 
 import { useState } from "react";
-import { X, Target, Zap, Users, Trophy, AlertTriangle, CheckCircle2, Brain, Loader2 } from "lucide-react";
+import {
+  X, Target, Zap, Users, Trophy, AlertTriangle, CheckCircle2,
+  Brain, Loader2, Pencil, Trash2, Calendar, Clock
+} from "lucide-react";
 import type { Committee, Task } from "@/data/kanbanData";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -15,8 +18,12 @@ interface TaskDetailProps {
   task: Task;
   committee: Committee | null;
   onClose: () => void;
-  /** 数据库任务 ID（用于 AI 诊断），如果是静态任务则为 undefined */
+  /** 数据库任务 ID（用于 AI 诊断/编辑/删除），如果是静态任务则为 undefined */
   dbTaskId?: string;
+  /** 编辑回调 */
+  onEdit?: () => void;
+  /** 删除回调 */
+  onDelete?: () => void;
 }
 
 const statusConfig: Record<string, { label: string; cls: string }> = {
@@ -27,12 +34,50 @@ const statusConfig: Record<string, { label: string; cls: string }> = {
   "有卡点": { label: "有卡点", cls: "status-blocked" },
 };
 
-export default function TaskDetail({ task, committee, onClose, dbTaskId }: TaskDetailProps) {
-  const cfg = statusConfig[task.status];
+/** 解析里程碑文本为结构化节点列表
+ * 支持格式：
+ * - "日期: 描述" 或 "日期 描述"（每行一个节点）
+ * - 普通文本（整体作为一个节点展示）
+ */
+function parseMilestones(text: string): Array<{ date: string; desc: string }> {
+  if (!text) return [];
+  const lines = text.split(/[；;,，\n]/).map(l => l.trim()).filter(Boolean);
+  return lines.map(line => {
+    // 尝试匹配 "YYYY-MM-DD: 描述" 或 "YYYY年M月D日: 描述" 或 "M月D日: 描述"
+    const dateMatch = line.match(/^(\d{4}[-/年]\d{1,2}[-/月]\d{0,2}日?|[一二三四五六七八九十\d]+月[一二三四五六七八九十\d]+日?|\d{1,2}[./-]\d{1,2})\s*[：:]\s*(.+)$/);
+    if (dateMatch) {
+      return { date: dateMatch[1], desc: dateMatch[2] };
+    }
+    // 尝试匹配 "描述（日期）" 格式
+    const parenMatch = line.match(/^(.+?)（(\d{4}[-/]\d{1,2}[-/]\d{1,2})）$/);
+    if (parenMatch) {
+      return { date: parenMatch[2], desc: parenMatch[1] };
+    }
+    return { date: "", desc: line };
+  });
+}
+
+export default function TaskDetail({ task, committee, onClose, dbTaskId, onEdit, onDelete }: TaskDetailProps) {
+  const cfg = statusConfig[task.status] || { label: task.status, cls: "status-pending" };
   const committeeColor = committee?.color || "oklch(0.42 0.18 22)";
 
   const [showDiagnosis, setShowDiagnosis] = useState(false);
   const [diagnosisResult, setDiagnosisResult] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const utils = trpc.useUtils();
+
+  const deleteMutation = trpc.tasks.delete.useMutation({
+    onSuccess: () => {
+      toast.success("任务已删除");
+      utils.tasks.list.invalidate();
+      utils.tasks.listAll.invalidate();
+      onClose();
+    },
+    onError: (err) => {
+      toast.error(`删除失败：${err.message}`);
+    },
+  });
 
   const diagnoseMutation = trpc.tasks.diagnose.useMutation({
     onSuccess: (data) => {
@@ -55,6 +100,21 @@ export default function TaskDetail({ task, committee, onClose, dbTaskId }: TaskD
       taskId: dbTaskId,
     });
   };
+
+  const handleDelete = () => {
+    if (!dbTaskId) {
+      toast.error("该任务暂不支持删除（静态任务）");
+      return;
+    }
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      setTimeout(() => setConfirmDelete(false), 3000);
+      return;
+    }
+    deleteMutation.mutate({ id: dbTaskId });
+  };
+
+  const milestones = parseMilestones(task.milestone || "");
 
   return (
     <>
@@ -106,6 +166,32 @@ export default function TaskDetail({ task, committee, onClose, dbTaskId }: TaskD
                 )}
                 {diagnoseMutation.isPending ? "诊断中…" : "AI 诊断"}
               </button>
+              {/* 编辑按钮 */}
+              {onEdit && dbTaskId && (
+                <button
+                  onClick={onEdit}
+                  className="w-7 h-7 rounded-sm flex items-center justify-center transition-colors hover:bg-muted"
+                  title="编辑任务"
+                  style={{ color: 'oklch(0.45 0.12 250)' }}
+                >
+                  <Pencil size={13} />
+                </button>
+              )}
+              {/* 删除按钮 */}
+              {onDelete && dbTaskId && (
+                <button
+                  onClick={handleDelete}
+                  disabled={deleteMutation.isPending}
+                  className="w-7 h-7 rounded-sm flex items-center justify-center transition-colors"
+                  title={confirmDelete ? "再次点击确认删除" : "删除任务"}
+                  style={{
+                    color: confirmDelete ? 'oklch(0.98 0.002 60)' : 'oklch(0.42 0.18 22)',
+                    background: confirmDelete ? 'oklch(0.42 0.18 22)' : 'transparent',
+                  }}
+                >
+                  {deleteMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                </button>
+              )}
               <button
                 onClick={onClose}
                 className="w-7 h-7 rounded-sm flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
@@ -114,57 +200,102 @@ export default function TaskDetail({ task, committee, onClose, dbTaskId }: TaskD
               </button>
             </div>
           </div>
+          {/* 删除确认提示 */}
+          {confirmDelete && (
+            <div className="mt-2 text-[10px] text-center py-1 rounded-sm" style={{ background: 'oklch(0.97 0.04 22)', color: 'oklch(0.42 0.18 22)', border: '1px solid oklch(0.80 0.12 22)' }}>
+              再次点击删除按钮确认删除（3秒内有效）
+            </div>
+          )}
         </div>
 
         {/* 内容 */}
         <div className="px-5 py-4 space-y-5">
 
           {/* 目标 */}
-          <Section icon={<Target size={13} />} title="任务目标" color={committeeColor}>
-            <p className="text-sm text-foreground leading-relaxed">{task.goal}</p>
-          </Section>
+          {task.goal && (
+            <Section icon={<Target size={13} />} title="任务目标" color={committeeColor}>
+              <p className="text-sm text-foreground leading-relaxed">{task.goal}</p>
+            </Section>
+          )}
 
           {/* 策略 */}
-          <Section icon={<Zap size={13} />} title="执行策略" color={committeeColor}>
-            <p className="text-sm text-foreground leading-relaxed">{task.strategy}</p>
-          </Section>
+          {task.strategy && (
+            <Section icon={<Zap size={13} />} title="执行策略" color={committeeColor}>
+              <p className="text-sm text-foreground leading-relaxed">{task.strategy}</p>
+            </Section>
+          )}
 
           {/* 行动项 */}
-          <Section icon={<CheckCircle2 size={13} />} title={`行动清单 (${task.actions.length}项)`} color={committeeColor}>
-            <div className="space-y-2">
-              {task.actions.map((action, i) => (
+          {task.actions && task.actions.length > 0 && (
+            <Section icon={<CheckCircle2 size={13} />} title={`行动清单 (${task.actions.length}项)`} color={committeeColor}>
+              <div className="space-y-2">
+                {task.actions.map((action, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-2.5 p-2.5 rounded-sm text-sm"
+                    style={{
+                      background: 'oklch(0.97 0.004 80)',
+                      border: '1px solid oklch(0.90 0.008 75)',
+                    }}
+                  >
+                    <span
+                      className="shrink-0 w-4 h-4 rounded-sm flex items-center justify-center text-[9px] font-bold mt-0.5"
+                      style={{ background: committeeColor, color: 'oklch(0.98 0.002 60)' }}
+                    >
+                      {i + 1}
+                    </span>
+                    <span className="text-foreground leading-relaxed">{action}</span>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* 里程碑 / 时间节点 */}
+          {task.milestone && (
+            <Section icon={<Trophy size={13} />} title="关键里程碑" color="oklch(0.78 0.12 75)">
+              {milestones.length > 1 ? (
+                <div className="space-y-2">
+                  {milestones.map((m, i) => (
+                    <div
+                      key={i}
+                      className="flex items-start gap-2.5 p-2.5 rounded-sm"
+                      style={{
+                        background: 'oklch(0.97 0.04 75)',
+                        border: '1px solid oklch(0.82 0.10 75)',
+                      }}
+                    >
+                      <span
+                        className="shrink-0 w-4 h-4 rounded-sm flex items-center justify-center text-[9px] font-bold mt-0.5"
+                        style={{ background: 'oklch(0.78 0.12 75)', color: 'white' }}
+                      >
+                        {i + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        {m.date && (
+                          <div className="flex items-center gap-1 mb-0.5">
+                            <Calendar size={9} style={{ color: 'oklch(0.55 0.10 75)' }} />
+                            <span className="text-[10px] font-mono font-medium" style={{ color: 'oklch(0.45 0.12 75)' }}>{m.date}</span>
+                          </div>
+                        )}
+                        <p className="text-sm text-foreground leading-relaxed">{m.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
                 <div
-                  key={i}
-                  className="flex items-start gap-2.5 p-2.5 rounded-sm text-sm"
+                  className="p-3 rounded-sm text-sm"
                   style={{
-                    background: 'oklch(0.97 0.004 80)',
-                    border: '1px solid oklch(0.90 0.008 75)',
+                    background: 'oklch(0.97 0.04 75)',
+                    border: '1px solid oklch(0.82 0.10 75)',
                   }}
                 >
-                  <span
-                    className="shrink-0 w-4 h-4 rounded-sm flex items-center justify-center text-[9px] font-bold mt-0.5"
-                    style={{ background: committeeColor, color: 'oklch(0.98 0.002 60)' }}
-                  >
-                    {i + 1}
-                  </span>
-                  <span className="text-foreground leading-relaxed">{action}</span>
+                  <p className="text-foreground leading-relaxed">{task.milestone}</p>
                 </div>
-              ))}
-            </div>
-          </Section>
-
-          {/* 里程碑 */}
-          <Section icon={<Trophy size={13} />} title="关键里程碑" color="oklch(0.78 0.12 75)">
-            <div
-              className="p-3 rounded-sm text-sm"
-              style={{
-                background: 'oklch(0.97 0.04 75)',
-                border: '1px solid oklch(0.82 0.10 75)',
-              }}
-            >
-              <p className="text-foreground leading-relaxed">{task.milestone}</p>
-            </div>
-          </Section>
+              )}
+            </Section>
+          )}
 
           {/* 当前结果 */}
           {task.result && (
@@ -197,56 +328,65 @@ export default function TaskDetail({ task, committee, onClose, dbTaskId }: TaskD
           )}
 
           {/* 责任规划 */}
-          <Section icon={<Users size={13} />} title="责任规划" color={committeeColor}>
-            <div className="space-y-3">
-              {/* 主责任人 */}
-              <div>
-                <div className="text-[10px] text-muted-foreground mb-1.5 font-medium tracking-wide">主责任人</div>
-                <div className="flex items-center gap-2">
-                  <div
-                    className="w-8 h-8 rounded-sm flex items-center justify-center text-sm font-bold"
-                    style={{ background: committeeColor, color: 'oklch(0.98 0.002 60)' }}
-                  >
-                    {task.manager.slice(-1)}
-                  </div>
+          {(task.manager || (task.contributors && task.contributors.length > 0)) && (
+            <Section icon={<Users size={13} />} title="责任规划" color={committeeColor}>
+              <div className="space-y-3">
+                {/* 主责任人 */}
+                {task.manager && (
                   <div>
-                    <div className="text-sm font-medium text-foreground">{task.manager}</div>
-                    <div className="text-[10px] text-muted-foreground">负责人</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* 协作成员 */}
-              {task.contributors.length > 1 && (
-                <div>
-                  <div className="text-[10px] text-muted-foreground mb-1.5 font-medium tracking-wide">协作成员</div>
-                  <div className="flex flex-wrap gap-2">
-                    {task.contributors.filter(c => c !== task.manager).map((member, i) => (
-                      <div key={i} className="flex items-center gap-1.5">
-                        <div
-                          className="w-6 h-6 rounded-sm flex items-center justify-center text-[10px] font-bold"
-                          style={{ background: `${committeeColor}20`, color: committeeColor }}
-                        >
-                          {member.slice(-1)}
-                        </div>
-                        <span className="text-xs text-foreground">{member}</span>
+                    <div className="text-[10px] text-muted-foreground mb-1.5 font-medium tracking-wide">主责任人</div>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-8 h-8 rounded-sm flex items-center justify-center text-sm font-bold"
+                        style={{ background: committeeColor, color: 'oklch(0.98 0.002 60)' }}
+                      >
+                        {task.manager.slice(-1)}
                       </div>
-                    ))}
+                      <div>
+                        <div className="text-sm font-medium text-foreground">{task.manager}</div>
+                        <div className="text-[10px] text-muted-foreground">负责人</div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          </Section>
+                )}
+
+                {/* 协作成员 */}
+                {task.contributors && task.contributors.length > 1 && (
+                  <div>
+                    <div className="text-[10px] text-muted-foreground mb-1.5 font-medium tracking-wide">协作成员</div>
+                    <div className="flex flex-wrap gap-2">
+                      {task.contributors.filter(c => c !== task.manager).map((member, i) => (
+                        <div key={i} className="flex items-center gap-1.5">
+                          <div
+                            className="w-6 h-6 rounded-sm flex items-center justify-center text-[10px] font-bold"
+                            style={{ background: `${committeeColor}20`, color: committeeColor }}
+                          >
+                            {member.slice(-1)}
+                          </div>
+                          <span className="text-xs text-foreground">{member}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Section>
+          )}
 
           {/* 截止日期 & 奖金 */}
           <div className="grid grid-cols-2 gap-3">
-            <div
-              className="p-3 rounded-sm"
-              style={{ background: 'oklch(0.97 0.004 80)', border: '1px solid oklch(0.86 0.012 75)' }}
-            >
-              <div className="text-[10px] text-muted-foreground mb-1">截止日期</div>
-              <div className="text-sm font-mono font-medium text-foreground">{task.deadline}</div>
-            </div>
+            {task.deadline && (
+              <div
+                className="p-3 rounded-sm"
+                style={{ background: 'oklch(0.97 0.004 80)', border: '1px solid oklch(0.86 0.012 75)' }}
+              >
+                <div className="flex items-center gap-1 text-[10px] text-muted-foreground mb-1">
+                  <Clock size={9} />
+                  截止日期
+                </div>
+                <div className="text-sm font-mono font-medium text-foreground">{task.deadline}</div>
+              </div>
+            )}
             {task.rewardPool && (
               <div
                 className="p-3 rounded-sm"
@@ -257,6 +397,37 @@ export default function TaskDetail({ task, committee, onClose, dbTaskId }: TaskD
               </div>
             )}
           </div>
+
+          {/* 底部操作区 */}
+          {dbTaskId && (
+            <div className="flex gap-2 pt-2 border-t border-border">
+              {onEdit && (
+                <button
+                  onClick={onEdit}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs rounded-sm font-medium transition-colors"
+                  style={{ background: `${committeeColor}15`, color: committeeColor, border: `1px solid ${committeeColor}30` }}
+                >
+                  <Pencil size={11} />
+                  编辑任务
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  onClick={handleDelete}
+                  disabled={deleteMutation.isPending}
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-sm font-medium transition-colors disabled:opacity-50"
+                  style={{
+                    background: confirmDelete ? 'oklch(0.42 0.18 22)' : 'oklch(0.97 0.004 80)',
+                    color: confirmDelete ? 'white' : 'oklch(0.42 0.18 22)',
+                    border: '1px solid oklch(0.80 0.12 22)',
+                  }}
+                >
+                  {deleteMutation.isPending ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+                  {confirmDelete ? "确认删除" : "删除"}
+                </button>
+              )}
+            </div>
+          )}
 
           {/* AI 诊断提示（无 dbTaskId 时） */}
           {!dbTaskId && (
@@ -308,7 +479,6 @@ export default function TaskDetail({ task, committee, onClose, dbTaskId }: TaskD
                 <X size={16} style={{ color: 'oklch(0.78 0.10 75)' }} />
               </button>
             </div>
-
             {/* 诊断内容 */}
             <div className="flex-1 overflow-y-auto p-6">
               <div
@@ -318,7 +488,6 @@ export default function TaskDetail({ task, committee, onClose, dbTaskId }: TaskD
                 <Streamdown>{diagnosisResult}</Streamdown>
               </div>
             </div>
-
             {/* 底部操作 */}
             <div
               className="px-6 py-4 flex items-center justify-between shrink-0"
