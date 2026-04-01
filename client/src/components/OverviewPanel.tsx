@@ -20,7 +20,7 @@ import GlobalOutcomePanel from "@/components/GlobalOutcomePanel";
 interface OverviewPanelProps {
   committees: Committee[];
   onSelectCommittee: (id: string) => void;
-  onTaskClick: (task: Task) => void;
+  onTaskClick: (task: Task, dbTaskId?: string) => void;
   onCreateTask?: (committeeId: string) => void;
 }
 
@@ -794,7 +794,7 @@ export default function OverviewPanel({ committees, onSelectCommittee, onTaskCli
                                     outline: isSelected ? `1px solid ${committee.color}40` : 'none',
                                     cursor: batchMode ? 'pointer' : 'default',
                                   }}
-                                  onClick={() => batchMode ? toggleTaskSelect(task.id) : onTaskClick(task)}
+                                  onClick={() => batchMode ? toggleTaskSelect(task.id) : onTaskClick(task, allDbTasks?.some(t => t.id === task.id) ? task.id : undefined)}
                                 >
                                   {batchMode && (
                                     <span className="shrink-0 mt-0.5" style={{ color: isSelected ? committee.color : 'oklch(0.7 0.01 60)' }}>
@@ -832,7 +832,7 @@ export default function OverviewPanel({ committees, onSelectCommittee, onTaskCli
                                     outline: isSelected ? `1px solid ${committee.color}40` : 'none',
                                     cursor: batchMode ? 'pointer' : 'default',
                                   }}
-                                  onClick={() => batchMode ? toggleTaskSelect(task.id) : onTaskClick(task)}
+                                  onClick={() => batchMode ? toggleTaskSelect(task.id) : onTaskClick(task, allDbTasks?.some(t => t.id === task.id) ? task.id : undefined)}
                                 >
                                   {batchMode && (
                                     <span className="shrink-0 mt-0.5" style={{ color: isSelected ? committee.color : 'oklch(0.7 0.01 60)' }}>
@@ -882,7 +882,7 @@ export default function OverviewPanel({ committees, onSelectCommittee, onTaskCli
                                 key={task.id}
                                 className="w-full flex items-center gap-2 text-left px-2 py-1 rounded-sm hover:bg-accent/30 transition-colors opacity-60 group relative z-20"
                                 style={{ cursor: batchMode ? 'pointer' : 'default', outline: isSelected ? '1px solid oklch(0.55 0.01 60)' : 'none' }}
-                                onClick={() => batchMode ? toggleTaskSelect(task.id) : onTaskClick(task)}
+                                onClick={() => batchMode ? toggleTaskSelect(task.id) : onTaskClick(task, allDbTasks?.some(t => t.id === task.id) ? task.id : undefined)}
                               >
                                 {batchMode ? (
                                   <span className="shrink-0" style={{ color: isSelected ? 'oklch(0.42 0.18 22)' : 'oklch(0.7 0.01 60)' }}>
@@ -991,7 +991,7 @@ export default function OverviewPanel({ committees, onSelectCommittee, onTaskCli
                   ).map((task) => (
                     <button
                       key={task.id}
-                      onClick={() => onTaskClick(task)}
+                      onClick={() => onTaskClick(task, allDbTasks?.some(t => t.id === task.id) ? task.id : undefined)}
                       className="w-full text-left war-card rounded-sm p-3 hover:shadow-md transition-all duration-200"
                       style={{ borderLeftColor: task.committeeColor }}
                     >

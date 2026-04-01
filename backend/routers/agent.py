@@ -6,15 +6,71 @@ import os
 import json
 import uuid
 from typing import AsyncGenerator, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from openai import AsyncOpenAI
 
 from models.database import SessionLocal, Task, User
-from routers.auth import require_auth
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
+
+# ==================== 认证（同时支持Cookie和Bearer Token）====================
+
+def get_current_user_flexible(request: Request) -> Optional[User]:
+    """同时支持 Cookie（kanban_session）和 Bearer Token 认证"""
+    import hmac as _hmac
+    import hashlib as _hashlib
+    import time as _time
+    SESSION_SECRET = os.getenv("SESSION_SECRET", "ttp2026_kanban_secret_key_2026")
+
+    db = SessionLocal()
+    try:
+        # 优先尝试 Cookie 认证（tRPC 登录方式）
+        cookie_val = request.cookies.get("kanban_session")
+        if cookie_val:
+            try:
+                parts = cookie_val.split(":")
+                if len(parts) == 3:
+                    user_id_str, timestamp, sig = parts
+                    payload = f"{user_id_str}:{timestamp}"
+                    expected_sig = _hmac.new(SESSION_SECRET.encode(), payload.encode(), _hashlib.sha256).hexdigest()
+                    if _hmac.compare_digest(sig, expected_sig):
+                        # 检查 token 是否过期（7天）
+                        if _time.time() - int(timestamp) <= 7 * 24 * 3600:
+                            user = db.query(User).filter(User.id == int(user_id_str)).first()
+                            if user:
+                                return user
+            except Exception:
+                pass
+
+        # 尝试 Bearer Token 认证（JWT 方式）
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            try:
+                from jose import jwt, JWTError
+                SECRET_KEY = os.getenv("JWT_SECRET", "ttp2026-kanban-secret-key-change-in-production")
+                payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+                username = payload.get("sub")
+                if username:
+                    user = db.query(User).filter(User.username == username).first()
+                    if user:
+                        return user
+            except Exception:
+                pass
+
+        return None
+    finally:
+        db.close()
+
+
+def require_flexible_auth(request: Request) -> User:
+    user = get_current_user_flexible(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录，请先登录")
+    return user
+
 
 # ==================== OpenAI 客户端 ====================
 
@@ -137,6 +193,20 @@ TOOLS = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "diagnose_task",
+            "description": "对指定任务进行AI诊断，分析任务风险、卡点和建议",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {"type": "string", "description": "任务ID"},
+                },
+                "required": ["task_id"],
+            },
+        },
+    },
 ]
 
 # ==================== 工具执行函数 ====================
@@ -158,7 +228,6 @@ def execute_tool(name: str, args: dict, db, current_user: User) -> str:
 
         elif name == "list_tasks":
             query = db.query(Task)
-            # 非管理员只能查看自己部门的任务
             if current_user.role != "admin":
                 query = query.filter(Task.committee_id == current_user.committee_id)
             elif args.get("committee_id"):
@@ -209,7 +278,6 @@ def execute_tool(name: str, args: dict, db, current_user: User) -> str:
             task = db.query(Task).filter(Task.id == args["task_id"]).first()
             if not task:
                 return json.dumps({"error": f"任务 {args['task_id']} 不存在"}, ensure_ascii=False)
-            # 权限检查：非管理员只能更新自己部门的任务
             if current_user.role != "admin" and task.committee_id != current_user.committee_id:
                 return json.dumps({"error": "无权限修改其他部门的任务"}, ensure_ascii=False)
 
@@ -227,11 +295,10 @@ def execute_tool(name: str, args: dict, db, current_user: User) -> str:
             return json.dumps({"success": True, "message": f"任务 {task.name} 已更新"}, ensure_ascii=False)
 
         elif name == "create_task":
-            # 权限检查
             if current_user.role != "admin" and args.get("committee_id") != current_user.committee_id:
                 return json.dumps({"error": "无权限在其他部门创建任务"}, ensure_ascii=False)
 
-            task_id = f"{args['committee_id']}-{str(uuid.uuid4())[:8]}"
+            task_id = str(uuid.uuid4())[:8]
             task = Task(
                 id=task_id,
                 name=args["name"],
@@ -270,6 +337,24 @@ def execute_tool(name: str, args: dict, db, current_user: User) -> str:
             ]
             return json.dumps(committees_data, ensure_ascii=False)
 
+        elif name == "diagnose_task":
+            task = db.query(Task).filter(Task.id == args["task_id"]).first()
+            if not task:
+                return json.dumps({"error": f"任务 {args['task_id']} 不存在"}, ensure_ascii=False)
+            return json.dumps({
+                "id": task.id,
+                "name": task.name,
+                "status": task.status,
+                "completion_rate": task.completion_rate,
+                "goal": task.goal,
+                "strategy": task.strategy,
+                "milestone": task.milestone,
+                "result": task.result,
+                "breakthrough": task.breakthrough,
+                "deadline": task.deadline,
+                "manager": task.manager,
+            }, ensure_ascii=False)
+
         else:
             return json.dumps({"error": f"未知工具: {name}"}, ensure_ascii=False)
 
@@ -286,6 +371,7 @@ SYSTEM_PROMPT = """你是 TTP2026 战略看板的 AI 助手，代号「突围助
 2. 更新任务状态、完成率、负责人
 3. 创建新任务
 4. 查询部门信息
+5. 对任务进行AI诊断（分析风险、卡点、给出建议）
 
 **重要规则：**
 - 回答简洁、专业，使用中文
@@ -293,6 +379,7 @@ SYSTEM_PROMPT = """你是 TTP2026 战略看板的 AI 助手，代号「突围助
 - 数字用粗体标注，如 **15个** 任务
 - 列表用简洁的格式展示
 - 遇到权限问题，礼貌说明
+- AI诊断时，从目标达成度、执行风险、卡点分析、改进建议四个维度给出专业意见
 
 **部门ID对照：**
 - qianwei = 前线委员会
@@ -316,6 +403,7 @@ class ChatRequest(BaseModel):
     messages: list[dict] | None = None
     message: str | None = None  # 简化格式：单条消息
     stream: bool = True
+    task_id: str | None = None  # AI诊断时传入任务ID
 
 
 # ==================== 流式 Agent 对话 ====================
@@ -423,17 +511,21 @@ async def agent_stream(
 
 @router.post("/chat")
 async def agent_chat(
-    request: ChatRequest,
-    current_user: User = Depends(require_auth),
+    request: Request,
+    body: ChatRequest,
+    current_user: User = Depends(require_flexible_auth),
 ):
     """AI Agent 对话接口（流式 SSE）"""
     db = SessionLocal()
     try:
         # 支持两种格式：messages 数组 或 单条 message
-        if request.messages:
-            msgs = request.messages
-        elif request.message:
-            msgs = [{"role": "user", "content": request.message}]
+        if body.messages:
+            msgs = body.messages
+        elif body.message:
+            msgs = [{"role": "user", "content": body.message}]
+        elif body.task_id:
+            # AI诊断模式
+            msgs = [{"role": "user", "content": f"请对任务ID为 {body.task_id} 的任务进行全面诊断，从目标达成度、执行风险、卡点分析、改进建议四个维度给出专业意见。"}]
         else:
             raise HTTPException(status_code=400, detail="请提供 message 或 messages 字段")
 
@@ -445,13 +537,57 @@ async def agent_chat(
                 "X-Accel-Buffering": "no",
             },
         )
+    except HTTPException:
+        db.close()
+        raise
+    except Exception as e:
+        db.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/diagnose")
+async def agent_diagnose(
+    request: Request,
+    body: ChatRequest,
+    current_user: User = Depends(require_flexible_auth),
+):
+    """AI诊断接口 - 对指定任务进行诊断"""
+    db = SessionLocal()
+    try:
+        task_id = body.task_id
+        if not task_id:
+            raise HTTPException(status_code=400, detail="请提供 task_id")
+
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if not task:
+            raise HTTPException(status_code=404, detail=f"任务 {task_id} 不存在")
+
+        msgs = [{
+            "role": "user",
+            "content": f"请对以下任务进行全面诊断：\n任务名称：{task.name}\n状态：{task.status}\n完成率：{task.completion_rate}%\n目标：{task.goal}\n执行策略：{task.strategy}\n阶段成果：{task.result}\n卡点：{task.breakthrough}\n截止日期：{task.deadline}\n\n请从目标达成度、执行风险、卡点分析、改进建议四个维度给出专业意见。"
+        }]
+
+        return StreamingResponse(
+            agent_stream(msgs, current_user, db),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+    except HTTPException:
+        db.close()
+        raise
     except Exception as e:
         db.close()
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/suggestions")
-async def get_suggestions(current_user: User = Depends(require_auth)):
+async def get_suggestions(
+    request: Request,
+    current_user: User = Depends(require_flexible_auth),
+):
     """获取快捷指令建议"""
     if current_user.role == "admin":
         suggestions = [

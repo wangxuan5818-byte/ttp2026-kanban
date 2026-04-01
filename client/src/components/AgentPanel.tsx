@@ -1,14 +1,13 @@
 /**
  * TTP2026 AI Agent 对话面板
  * 支持自然语言操作看板数据，嵌入到主界面右侧
+ * 修复：使用 Cookie 认证（credentials: 'include'），不再依赖 Bearer Token
  */
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Sparkles, Send, X, Loader2, Bot, ChevronDown, RotateCcw, Zap } from "lucide-react";
+import { Sparkles, Send, X, Loader2, Bot, RotateCcw, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { authStore } from "@/lib/api";
 
 // ==================== 类型定义 ====================
 
@@ -35,9 +34,10 @@ const TOOL_LABELS: Record<string, string> = {
   update_task: "✏️ 更新任务",
   create_task: "➕ 创建任务",
   list_committees: "🏢 获取部门列表",
+  diagnose_task: "🧠 AI 任务诊断",
 };
 
-// ==================== 流式 SSE 请求 ====================
+// ==================== 流式 SSE 请求（使用 Cookie 认证）====================
 
 async function streamAgentChat(
   messages: { role: string; content: string }[],
@@ -46,21 +46,20 @@ async function streamAgentChat(
   onDone: () => void,
   onError: (err: string) => void
 ) {
-  const token = authStore.getToken();
-  if (!token) {
-    onError("未登录，请先登录");
-    return;
-  }
-
   try {
     const response = await fetch("/api/agent/chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
       },
+      credentials: "include", // 使用 Cookie 认证，与主应用一致
       body: JSON.stringify({ messages, stream: true }),
     });
+
+    if (response.status === 401) {
+      onError("未登录，请先登录系统");
+      return;
+    }
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
@@ -122,15 +121,18 @@ export default function AgentPanel({ onClose, className }: AgentPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const currentAssistantRef = useRef<string>("");
 
-  // 加载快捷指令建议
+  // 加载快捷指令建议（使用 Cookie 认证）
   useEffect(() => {
-    const token = authStore.getToken();
-    if (!token) return;
     fetch("/api/agent/suggestions", {
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: "include",
     })
-      .then((r) => r.json())
-      .then((data) => setSuggestions(data.suggestions || []))
+      .then((r) => {
+        if (!r.ok) return null;
+        return r.json();
+      })
+      .then((data) => {
+        if (data) setSuggestions(data.suggestions || []);
+      })
       .catch(() => {});
   }, []);
 
@@ -335,8 +337,8 @@ export default function AgentPanel({ onClose, className }: AgentPanelProps) {
                     className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs border"
                     style={{
                       background: "oklch(0.95 0.01 200)",
-                      borderColor: "oklch(0.80 0.05 200)",
-                      color: "oklch(0.40 0.12 200)",
+                      borderColor: "oklch(0.85 0.05 200)",
+                      color: "oklch(0.35 0.12 200)",
                     }}
                   >
                     <Loader2 className="size-3 animate-spin" />
