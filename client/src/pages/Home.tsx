@@ -13,7 +13,8 @@ import LoginPage from "@/components/LoginPage";
 import { committees, strategicGoal } from "@/data/kanbanData";
 import type { Task } from "@/data/kanbanData";
 import { trpc } from "@/lib/trpc";
-import { LogOut, User, BookOpen, Shield, FileText, Bell, Settings2 } from "lucide-react";
+import { LogOut, User, BookOpen, Shield, FileText, Bell, Settings2, Sparkles } from "lucide-react";
+import AgentPanel from "@/components/AgentPanel";
 import Guide from "@/pages/Guide";
 import UserManager from "@/components/UserManager";
 import WeeklyReport from "@/components/WeeklyReport";
@@ -34,6 +35,7 @@ export default function Home() {
   const [showDingTalk, setShowDingTalk] = useState(false);
   const [showGlobalEditor, setShowGlobalEditor] = useState(false);
   const [showCommitteeEditor, setShowCommitteeEditor] = useState(false);
+  const [showAgentPanel, setShowAgentPanel] = useState(false);
 
   // 获取当前登录的看板用户
   const { data: kanbanUser, isLoading: authLoading, refetch: refetchMe } = trpc.kanban.me.useQuery(
@@ -329,6 +331,18 @@ export default function Home() {
                   <span>说明书</span>
                 </button>
                 <button
+                  onClick={() => setShowAgentPanel(prev => !prev)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-sm font-medium transition-colors"
+                  style={showAgentPanel
+                    ? { border: '1px solid oklch(0.42 0.18 22)', background: 'oklch(0.42 0.18 22)', color: 'white' }
+                    : { border: '1px solid oklch(0.42 0.18 22)', background: 'oklch(0.42 0.18 22 / 0.08)', color: 'oklch(0.42 0.18 22)' }
+                  }
+                  title="AI 助手"
+                >
+                  <Sparkles size={13} />
+                  <span>AI 助手</span>
+                </button>
+                <button
                   onClick={() => logoutMutation.mutate()}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-sm text-muted-foreground hover:text-foreground transition-colors"
                   style={{ border: '1px solid oklch(0.86 0.012 75)' }}
@@ -373,6 +387,11 @@ export default function Home() {
               onClose={handleCloseDetail}
               dbTaskId={selectedTaskDbId}
             />
+          )}
+
+          {/* AI Agent 侧边栏 */}
+          {showAgentPanel && (
+            <AgentPanel onClose={() => setShowAgentPanel(false)} />
           )}
         </div>
       </main>

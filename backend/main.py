@@ -15,7 +15,7 @@ from passlib.context import CryptContext
 sys.path.insert(0, os.path.dirname(__file__))
 
 from models.database import create_tables, SessionLocal, User, SystemConfig
-from routers import auth, tasks, outcomes, committees, users, trpc_compat
+from routers import auth, tasks, outcomes, committees, users, trpc_compat, agent
 
 pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
 
@@ -121,6 +121,7 @@ app.include_router(outcomes.router)
 app.include_router(committees.router)
 app.include_router(users.router)
 app.include_router(trpc_compat.router)
+app.include_router(agent.router)
 
 
 @app.get("/api/health")
